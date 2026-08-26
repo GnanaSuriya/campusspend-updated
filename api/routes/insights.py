@@ -1,87 +1,145 @@
-from flask import Blueprint, jsonify
+import os
+import json
 from datetime import datetime
-from sqlalchemy import extract
-from models import Transaction
+from flask import Blueprint, jsonify, request
+from models import Transaction, DirectSharedExpense, Budget, User
 from database import db
+from sqlalchemy import extract, or_
 from utils.auth import require_auth
-import calendar
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, Field
 
 insights_bp = Blueprint('insights', __name__)
 
-@insights_bp.route('/insights', methods=['GET'])
-@require_auth
-def get_insights(user_id):
-    now = datetime.utcnow()
-    month = now.month
-    year = now.year
-    
-    # Current month tx
-    current_tx = Transaction.query.filter(
-        Transaction.user_id == user_id,
-        extract('month', Transaction.date) == month,
-        extract('year', Transaction.date) == year
-    ).all()
-    
-    # Last month tx
-    last_month = month - 1 if month > 1 else 12
-    last_month_year = year if month > 1 else year - 1
-    
-    last_tx = Transaction.query.filter(
-        Transaction.user_id == user_id,
-        extract('month', Transaction.date) == last_month,
-        extract('year', Transaction.date) == last_month_year
-    ).all()
-    
-    curr_total = sum(t.amount for t in current_tx)
-    last_total = sum(t.amount for t in last_tx)
-    
-    insights = []
-    
-    # Trend insight
-    if last_total > 0:
-        diff = curr_total - last_total
-        pct = (diff / last_total) * 100
-        if diff > 0:
-            insights.append(f"You've spent {pct:.1f}% more this month compared to last month.")
-        else:
-            insights.append(f"Great job! You've spent {-pct:.1f}% less this month compared to last month.")
-            
-    # Weekend vs Weekday
-    weekend_spent = sum(t.amount for t in current_tx if t.date.weekday() >= 5)
-    weekday_spent = sum(t.amount for t in current_tx if t.date.weekday() < 5)
-    
-    if weekend_spent > weekday_spent:
-        insights.append("You tend to spend more on weekends.")
-    else:
-        insights.append("Most of your spending happens during weekdays.")
-        
-    return jsonify({"success": True, "data": insights}), 200
+class SavingSuggestion(BaseModel):
+    category: str
+    current_spending: float
+    suggested_reduction: float
+    suggestion: str
 
-@insights_bp.route('/predictions', methods=['GET'])
+class TopCategory(BaseModel):
+    name: str
+    amount: float
+    percentage: float
+
+class AIInsights(BaseModel):
+    summary: str
+    top_category: TopCategory
+    warnings: list[str]
+    saving_suggestions: list[SavingSuggestion]
+    recommendations: list[str]
+
+@insights_bp.route('/insights', methods=['POST'])
 @require_auth
-def get_predictions(user_id):
+def generate_insights(user_id):
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        print("Missing GEMINI_API_KEY")
+        return jsonify({"success": False, "error": "Insights are temporarily unavailable."}), 503
+
     now = datetime.utcnow()
-    day = now.day
-    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    month_year_str = now.strftime('%Y-%m')
     
-    current_tx = Transaction.query.filter(
+    # 1. Fetch personal transactions
+    personal_tx = Transaction.query.filter(
         Transaction.user_id == user_id,
         extract('month', Transaction.date) == now.month,
         extract('year', Transaction.date) == now.year
     ).all()
     
-    total_spent = sum(t.amount for t in current_tx)
+    # 2. Fetch effective shared expenses (Accepted, Change_Pending)
+    shared_tx = DirectSharedExpense.query.filter(
+        or_(DirectSharedExpense.creator_id == user_id, DirectSharedExpense.other_user_id == user_id),
+        DirectSharedExpense.status.in_(['Accepted', 'Change_Pending'])
+    ).all()
     
-    if day > 0 and total_spent > 0:
-        daily_avg = total_spent / day
-        predicted_end_month = daily_avg * days_in_month
-    else:
-        predicted_end_month = 0
+    if len(personal_tx) == 0 and len(shared_tx) == 0:
+        return jsonify({"success": False, "error": "No spending data yet. Add a few expenses to unlock personalized AI insights."}), 400
+
+    # 3. Aggregate totals
+    total_spent = sum(t.amount for t in personal_tx)
+    for stx in shared_tx:
+        if stx.creator_id == user_id:
+            total_spent += stx.total_amount * (stx.creator_percentage / 100.0)
+        else:
+            total_spent += stx.total_amount * (stx.other_percentage / 100.0)
+            
+    budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year_str).all()
+    overall_budget = sum(b.amount for b in budgets if b.category == 'Overall')
         
-    return jsonify({
-        "success": True,
-        "data": {
-            "predicted_spend": predicted_end_month,
-            "daily_average": daily_avg if 'daily_avg' in locals() else 0
-        }
-    }), 200
+    remaining = overall_budget - total_spent
+    percentage_used = round((total_spent / overall_budget * 100) if overall_budget > 0 else 0, 1)
+
+    # 4. Aggregate categories
+    cat_spent = {}
+    for t in personal_tx:
+        cat_spent[t.category] = cat_spent.get(t.category, 0) + t.amount
+    for stx in shared_tx:
+        cat = stx.category or 'Other'
+        if stx.creator_id == user_id:
+            cat_spent[cat] = cat_spent.get(cat, 0) + stx.total_amount * (stx.creator_percentage / 100.0)
+        else:
+            cat_spent[cat] = cat_spent.get(cat, 0) + stx.total_amount * (stx.other_percentage / 100.0)
+
+    categories_data = []
+    for b in budgets:
+        if b.category != 'Overall':
+            spent = cat_spent.get(b.category, 0)
+            categories_data.append({
+                "name": b.category,
+                "budget": b.amount,
+                "spent": round(spent, 2),
+                "remaining": round(b.amount - spent, 2),
+                "percentage_used": round((spent / b.amount * 100) if b.amount > 0 else 0, 1)
+            })
+            
+    # Include unbudgeted categories that have spending
+    budgeted_cats = set(b.category for b in budgets if b.category != 'Overall')
+    for cat, spent in cat_spent.items():
+        if cat not in budgeted_cats and spent > 0:
+            categories_data.append({
+                "name": cat,
+                "budget": 0,
+                "spent": round(spent, 2),
+                "remaining": -round(spent, 2),
+                "percentage_used": 100
+            })
+            
+    summary_data = {
+        "total_budget": overall_budget,
+        "total_spent": round(total_spent, 2),
+        "remaining": round(remaining, 2),
+        "percentage_used": percentage_used,
+        "categories": categories_data
+    }
+
+    prompt = f"""
+You are a personalized AI financial advisor inside the CampusSpend app.
+Analyze the following strictly factual financial summary of a student's spending for the current month.
+Return 3-5 personalized insights as structured JSON.
+Do not generate generic advice like "spend less". Focus on specific categories, real numbers from the data, and mathematically sound recommendations.
+The suggested saving amount must be reasonable and explicitly reference the user's spending data.
+
+FINANCIAL DATA:
+{json.dumps(summary_data, indent=2)}
+"""
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=AIInsights,
+                temperature=0.4
+            ),
+        )
+        # Parse the JSON explicitly
+        output_json = json.loads(response.text)
+        return jsonify({"success": True, "data": output_json}), 200
+        
+    except Exception as e:
+        print("Gemini API Error:", str(e))
+        return jsonify({"success": False, "error": "Insights are temporarily unavailable. Please try again later."}), 503
