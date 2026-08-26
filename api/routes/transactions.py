@@ -157,8 +157,14 @@ def get_dashboard(user_id):
             category_totals[cat] = category_totals.get(cat, 0) + amount
         
     # Get budget
-    budget = Budget.query.filter_by(user_id=user_id, category='Overall', month_year=month_year_str).first()
-    budget_amount = budget.amount if budget else 0
+    budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year_str).all()
+    budget_amount = 0
+    cat_budgets = []
+    for b in budgets:
+        if b.category == 'Overall':
+            budget_amount = b.amount
+        else:
+            cat_budgets.append({"category": b.category, "amount": b.amount})
     
     # Get recent transactions (last 5 total)
     # Convert personal to generic dicts
@@ -191,15 +197,25 @@ def get_dashboard(user_id):
     
     # Check if the user has any pending requests as a receiver
     pending_count = DirectSharedExpense.query.filter_by(other_user_id=user_id, status='Pending').count()
+    change_pending_count = DirectSharedExpense.query.filter(
+        DirectSharedExpense.other_user_id == user_id, 
+        DirectSharedExpense.status == 'Change_Pending',
+        DirectSharedExpense.change_requested_by != user_id
+    ).count() + DirectSharedExpense.query.filter(
+        DirectSharedExpense.creator_id == user_id, 
+        DirectSharedExpense.status == 'Change_Pending',
+        DirectSharedExpense.change_requested_by != user_id
+    ).count()
     
     return jsonify({
         "success": True,
         "data": {
             "total_spent": total_spent,
             "budget": budget_amount,
+            "category_budgets": cat_budgets,
             "remaining": budget_amount - total_spent if budget_amount > 0 else 0,
             "category_breakdown": [{"category": k, "amount": v} for k, v in category_totals.items()],
             "recent_transactions": recent,
-            "pending_requests_count": pending_count
+            "pending_requests_count": pending_count + change_pending_count
         }
     }), 200

@@ -122,6 +122,27 @@ export default function Dashboard() {
         </GlassCard>
       )}
 
+      {data.category_budgets && data.category_budgets.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {data.category_budgets.map((cat, i) => {
+            const catSpent = data.category_breakdown.find(c => c.category === cat.category)?.amount || 0;
+            const catLeft = cat.amount - catSpent;
+            return (
+              <GlassCard key={i} className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-slate-800 font-bold border-b border-slate-200/50 pb-2 mb-1">
+                  <span>{cat.category}</span>
+                  <span>₹{cat.amount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Spent: ₹{catSpent.toFixed(2)}</span>
+                  <span className={`font-medium ${catLeft < 0 ? 'text-red-500' : 'text-slate-700'}`}>Left: ₹{catLeft.toFixed(2)}</span>
+                </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <GlassCard>
           <h3 className="text-lg font-bold text-slate-800 mb-6">Spending by Category</h3>

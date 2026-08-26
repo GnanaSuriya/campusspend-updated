@@ -175,13 +175,23 @@ class DirectSharedExpense(db.Model):
     description = db.Column(db.String(200))
     category = db.Column(db.String(50))
     date = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), default='Pending') # Pending, Accepted, Declined
+    status = db.Column(db.String(50), default='Pending') # Pending, Accepted, Declined, Change_Pending
     decline_reason = db.Column(db.String(250), nullable=True)
+    pending_changes = db.Column(db.Text, nullable=True) # JSON string
+    change_requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     creator = db.relationship('User', foreign_keys=[creator_id])
     other_user = db.relationship('User', foreign_keys=[other_user_id])
+    changer = db.relationship('User', foreign_keys=[change_requested_by])
 
     def to_dict(self):
+        import json
+        changes = None
+        if self.pending_changes:
+            try:
+                changes = json.loads(self.pending_changes)
+            except:
+                pass
         return {
             'id': self.id,
             'creator_id': self.creator_id,
@@ -197,5 +207,7 @@ class DirectSharedExpense(db.Model):
             'category': self.category,
             'date': self.date.isoformat(),
             'status': self.status,
-            'decline_reason': self.decline_reason
+            'decline_reason': self.decline_reason,
+            'pending_changes': changes,
+            'change_requested_by': self.change_requested_by
         }

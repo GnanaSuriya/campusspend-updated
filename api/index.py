@@ -44,6 +44,14 @@ try:
 
         with app.app_context():
             db.create_all()
+            
+            # Add new columns if they don't exist (hack for SQLite/Postgres without Alembic)
+            try:
+                db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN pending_changes TEXT'))
+                db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN change_requested_by INTEGER'))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
         # Register Blueprints
         app.register_blueprint(auth_bp, url_prefix='/api/auth')

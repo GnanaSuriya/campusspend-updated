@@ -3,7 +3,7 @@ import { GlassCard, GlassButton, GlassInput, GlassModal } from '../components/ui
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getCategories } from '../utils/categories';
-import { CheckCircle2, Edit2, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Edit2, Trash2, XCircle, AlertCircle } from 'lucide-react';
 
 export default function SharedExpenses() {
   const { user } = useAuth();
@@ -16,7 +16,7 @@ export default function SharedExpenses() {
   
   const categories = getCategories(user.student_type);
   const [formData, setFormData] = useState({ 
-    description: '', total_amount: '', category: categories[0], creator_percentage: '50', other_user_email: '' 
+    description: '', total_amount: '', category: categories[0], creator_percentage: '50', other_user_name: '' 
   });
   
   const [editData, setEditData] = useState(null);
@@ -39,7 +39,7 @@ export default function SharedExpenses() {
     e.preventDefault();
     try {
       await api.post('/shared', formData);
-      setFormData({ description: '', total_amount: '', category: categories[0], creator_percentage: '50', other_user_email: '' });
+      setFormData({ description: '', total_amount: '', category: categories[0], creator_percentage: '50', other_user_name: '' });
       setIsExpenseModalOpen(false);
       fetchData();
       alert("Request sent successfully!");
@@ -52,7 +52,8 @@ export default function SharedExpenses() {
     e.preventDefault();
     try {
       await api.patch(`/shared/${editData.id}`, {
-        creator_percentage: editData.creator_percentage
+        creator_percentage: editData.creator_percentage,
+        total_amount: editData.total_amount
       });
       setIsEditModalOpen(false);
       fetchData();
@@ -72,11 +73,12 @@ export default function SharedExpenses() {
     }
   };
 
-  const handleStatusUpdate = async (id, status, reason = null) => {
+  const handleStatusUpdate = async (id, status) => {
     try {
-      const payload = { status };
-      if (reason) payload.decline_reason = reason;
-      await api.patch(`/shared/${id}`, payload);
+      await api.patch(`/shared/${id}`, { 
+        status, 
+        decline_reason: declineReason 
+      });
       if (status === 'Declined') setDeclineData(null);
       fetchData();
     } catch (err) {
@@ -84,55 +86,124 @@ export default function SharedExpenses() {
     }
   };
 
-  const myExpenses = expenses.filter(e => e.creator_id === user.id);
-  const sharedWithMe = expenses.filter(e => e.other_user_id === user.id);
+  const handleApproveChange = async (id) => {
+    try {
+      await api.post(`/shared/${id}/approve_change`);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || "Error approving change");
+    }
+  };
+
+  const handleRejectChange = async (id) => {
+    try {
+      await api.post(`/shared/${id}/reject_change`);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || "Error rejecting change");
+    }
+  };
+
+  const sent = expenses.filter(e => e.creator_id === user.id);
+  const received = expenses.filter(e => e.other_user_id === user.id);
 
   return (
     <div className="flex flex-col gap-8 pb-12 animate-in fade-in duration-500">
       <header className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800">Shared Expenses</h1>
-          <p className="text-slate-600 mt-1">Split bills 1-on-1 with friends</p>
+          <p className="text-slate-600 mt-1">Split bills and track who owes what.</p>
         </div>
         <GlassButton onClick={() => setIsExpenseModalOpen(true)}>
-          Split a Bill
+          + New Shared Expense
         </GlassButton>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Shared By Me */}
-        <div className="flex flex-col gap-6">
-          <h2 className="text-xl font-bold text-slate-800">Shared by Me</h2>
-          {myExpenses.length > 0 ? myExpenses.map(exp => (
-            <ExpenseCard key={exp.id} exp={exp} isCreator={true} user={user} onEdit={() => { setEditData(exp); setIsEditModalOpen(true); }} onDelete={handleDelete} onStatus={handleStatusUpdate} onDeclineInit={() => {}} />
-          )) : (
-            <div className="text-center py-8 text-slate-500">You haven't shared any expenses.</div>
-          )}
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+            Received by Me
+            <span className="bg-primary-100 text-primary-700 text-sm py-0.5 px-2 rounded-full font-bold">{received.length}</span>
+          </h2>
+          <div className="flex flex-col gap-4">
+            {received.length > 0 ? (
+              received.map(exp => (
+                <ExpenseCard 
+                  key={exp.id} 
+                  exp={exp} 
+                  isCreator={false} 
+                  user={user}
+                  onEdit={() => setEditData(exp)}
+                  onStatus={handleStatusUpdate}
+                  onDeclineInit={() => setDeclineData(exp)}
+                  onApproveChange={handleApproveChange}
+                  onRejectChange={handleRejectChange}
+                />
+              ))
+            ) : (
+              <div className="text-slate-500 p-8 text-center bg-white/20 rounded-2xl border border-white/40">No expenses shared with you.</div>
+            )}
+          </div>
         </div>
 
-        {/* Shared With Me */}
-        <div className="flex flex-col gap-6">
-          <h2 className="text-xl font-bold text-slate-800">Shared with Me</h2>
-          {sharedWithMe.length > 0 ? sharedWithMe.map(exp => (
-            <ExpenseCard key={exp.id} exp={exp} isCreator={false} user={user} onEdit={() => { setEditData(exp); setIsEditModalOpen(true); }} onDelete={handleDelete} onStatus={handleStatusUpdate} onDeclineInit={(id) => { setDeclineData(id); setDeclineReason(''); }} />
-          )) : (
-            <div className="text-center py-8 text-slate-500">No one has shared expenses with you.</div>
-          )}
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+            Shared by Me
+            <span className="bg-primary-100 text-primary-700 text-sm py-0.5 px-2 rounded-full font-bold">{sent.length}</span>
+          </h2>
+          <div className="flex flex-col gap-4">
+            {sent.length > 0 ? (
+              sent.map(exp => (
+                <ExpenseCard 
+                  key={exp.id} 
+                  exp={exp} 
+                  isCreator={true} 
+                  user={user}
+                  onEdit={() => setEditData(exp)}
+                  onDelete={handleDelete}
+                  onApproveChange={handleApproveChange}
+                  onRejectChange={handleRejectChange}
+                />
+              ))
+            ) : (
+              <div className="text-slate-500 p-8 text-center bg-white/20 rounded-2xl border border-white/40">You haven't shared any expenses.</div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Add Modal */}
-      <GlassModal isOpen={isExpenseModalOpen} onClose={() => setIsExpenseModalOpen(false)} title="Split a Bill">
+      {/* Decline Modal */}
+      {declineData && (
+        <GlassModal isOpen={true} onClose={() => setDeclineData(null)} title="Decline Expense">
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600">Please provide a reason for declining this shared expense from {declineData.creator_name}:</p>
+            <textarea 
+              className="w-full px-4 py-3 rounded-xl glass-input text-slate-800 resize-none h-24"
+              placeholder="e.g. I already paid you in cash..."
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+            />
+            <div className="flex gap-3 justify-end mt-2">
+              <button onClick={() => setDeclineData(null)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Cancel</button>
+              <GlassButton onClick={() => handleStatusUpdate(declineData.id, 'Declined')} className="bg-red-500 text-white hover:bg-red-600">Decline Request</GlassButton>
+            </div>
+          </div>
+        </GlassModal>
+      )}
+
+      {/* New Expense Modal */}
+      <GlassModal isOpen={isExpenseModalOpen} onClose={() => setIsExpenseModalOpen(false)} title="Share an Expense">
         <form onSubmit={handleAddExpense} className="flex flex-col gap-4">
           <GlassInput 
-            placeholder="Description (e.g. Dinner)" 
+            type="text" 
+            placeholder="Description (e.g. Dinner, Movie)" 
             value={formData.description} 
             onChange={(e) => setFormData({...formData, description: e.target.value})} 
             required 
           />
           <GlassInput 
             type="number" 
-            placeholder="Total Amount (₹)" 
+            placeholder="Total Amount (?)" 
             value={formData.total_amount} 
             onChange={(e) => setFormData({...formData, total_amount: e.target.value})} 
             required 
@@ -147,10 +218,10 @@ export default function SharedExpenses() {
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <GlassInput 
-            type="email" 
-            placeholder="Friend's Email Address" 
-            value={formData.other_user_email} 
-            onChange={(e) => setFormData({...formData, other_user_email: e.target.value})} 
+            type="text" 
+            placeholder="Friend's Name" 
+            value={formData.other_user_name} 
+            onChange={(e) => setFormData({...formData, other_user_name: e.target.value})} 
             required 
           />
           <div className="flex flex-col gap-2 pt-2 border-t border-slate-200/50">
@@ -183,8 +254,8 @@ export default function SharedExpenses() {
             </div>
             {formData.total_amount && (
               <div className="flex justify-between text-sm mt-2 font-medium">
-                <span className="text-primary-700">My Share: ₹{(parseFloat(formData.total_amount) * (parseFloat(formData.creator_percentage) || 0) / 100).toFixed(2)}</span>
-                <span className="text-mint-700">Friend's Share: ₹{(parseFloat(formData.total_amount) * (100 - (parseFloat(formData.creator_percentage) || 0)) / 100).toFixed(2)}</span>
+                <span className="text-primary-700">My Share: ?{(parseFloat(formData.total_amount) * (parseFloat(formData.creator_percentage) || 0) / 100).toFixed(2)}</span>
+                <span className="text-mint-700">Friend's Share: ?{(parseFloat(formData.total_amount) * (100 - (parseFloat(formData.creator_percentage) || 0)) / 100).toFixed(2)}</span>
               </div>
             )}
           </div>
@@ -194,9 +265,19 @@ export default function SharedExpenses() {
 
       {/* Edit Modal */}
       {editData && (
-        <GlassModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit Split">
+        <GlassModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit Shared Expense">
           <form onSubmit={handleEditSubmit} className="flex flex-col gap-4">
-            <p className="text-sm text-slate-600 mb-2">Editing split for: <strong>{editData.description}</strong> (Total: ₹{editData.total_amount})</p>
+            <p className="text-sm text-slate-600 mb-2">Editing: <strong>{editData.description}</strong></p>
+            <div className="flex flex-col gap-1">
+                <span className="text-xs text-slate-500">Total Amount (?)</span>
+                <GlassInput 
+                  type="number" 
+                  value={editData.total_amount} 
+                  onChange={(e) => setEditData({...editData, total_amount: e.target.value})} 
+                  required 
+                  min="1" step="0.01"
+                />
+            </div>
             <div className="flex gap-4 items-center">
               <div className="flex-1 flex flex-col gap-1">
                 <span className="text-xs text-slate-500 text-center">Creator %</span>
@@ -223,31 +304,7 @@ export default function SharedExpenses() {
                 />
               </div>
             </div>
-            <div className="flex justify-between text-sm mt-2 font-medium">
-              <span className="text-primary-700">Creator: ₹{(editData.total_amount * (parseFloat(editData.creator_percentage) || 0) / 100).toFixed(2)}</span>
-              <span className="text-mint-700">Other: ₹{(editData.total_amount * (100 - (parseFloat(editData.creator_percentage) || 0)) / 100).toFixed(2)}</span>
-            </div>
-            <GlassButton type="submit" className="mt-4">Update Split</GlassButton>
-          </form>
-        </GlassModal>
-      )}
-
-      {/* Decline Modal */}
-      {declineData && (
-        <GlassModal isOpen={!!declineData} onClose={() => setDeclineData(null)} title="Decline Shared Expense">
-          <form onSubmit={(e) => { e.preventDefault(); handleStatusUpdate(declineData, 'Declined', declineReason); }} className="flex flex-col gap-4">
-            <p className="text-sm text-slate-600">Please provide a reason for declining:</p>
-            <textarea
-              className="w-full px-4 py-3 rounded-xl glass-input text-slate-800 resize-none h-24"
-              placeholder="I already paid my share separately..."
-              value={declineReason}
-              onChange={(e) => setDeclineReason(e.target.value)}
-              required
-            />
-            <div className="flex gap-2 mt-2">
-              <GlassButton type="button" onClick={() => setDeclineData(null)} className="flex-1 bg-slate-200 text-slate-700 hover:bg-slate-300">Cancel</GlassButton>
-              <GlassButton type="submit" className="flex-1 bg-red-500 hover:bg-red-600 border-none text-white shadow-none">Decline Request</GlassButton>
-            </div>
+            <GlassButton type="submit" className="mt-4">Submit Changes</GlassButton>
           </form>
         </GlassModal>
       )}
@@ -255,26 +312,30 @@ export default function SharedExpenses() {
   );
 }
 
-function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDeclineInit }) {
+function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDeclineInit, onApproveChange, onRejectChange }) {
   const myPct = isCreator ? exp.creator_percentage : exp.other_percentage;
   const friendPct = isCreator ? exp.other_percentage : exp.creator_percentage;
   const myAmount = (exp.total_amount * myPct) / 100;
   const friendAmount = (exp.total_amount * friendPct) / 100;
+
+  const isChangePending = exp.status === 'Change_Pending';
+  const iRequestedChange = exp.change_requested_by === user.id;
 
   return (
     <GlassCard className="flex flex-col gap-4">
       <div className="flex justify-between items-start border-b border-slate-200/50 pb-3">
         <div>
           <h3 className="text-lg font-bold text-slate-800">{exp.description}</h3>
-          <p className="text-sm text-slate-500">Total: ₹{exp.total_amount.toFixed(2)}</p>
+          <p className="text-sm text-slate-500">Total: ?{exp.total_amount.toFixed(2)}</p>
         </div>
         <div className="flex flex-col items-end">
           <span className={`text-xs font-bold px-2 py-1 rounded-full ${
             exp.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
             exp.status === 'Declined' ? 'bg-red-100 text-red-700' :
+            exp.status === 'Change_Pending' ? 'bg-blue-100 text-blue-700' :
             'bg-mint-100 text-mint-700'
           }`}>
-            {exp.status}
+            {exp.status === 'Change_Pending' ? 'Change Pending' : exp.status}
           </span>
           <p className="text-xs text-slate-400 mt-1">{new Date(exp.date).toLocaleDateString()}</p>
         </div>
@@ -283,15 +344,48 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
       <div className="flex justify-between text-sm">
         <div className="flex flex-col gap-1">
           <span className="font-bold text-slate-700">Your Share</span>
-          <span className="text-slate-800">₹{myAmount.toFixed(2)} ({myPct}%)</span>
+          <span className="text-slate-800">?{myAmount.toFixed(2)} ({myPct}%)</span>
         </div>
         <div className="flex flex-col gap-1 text-right">
           <span className="font-bold text-slate-700">
             {isCreator ? (exp.other_user_name || exp.other_user_email) : (exp.creator_name || exp.creator_email)}'s Share
           </span>
-          <span className="text-slate-800">₹{friendAmount.toFixed(2)} ({friendPct}%)</span>
+          <span className="text-slate-800">?{friendAmount.toFixed(2)} ({friendPct}%)</span>
         </div>
       </div>
+
+      {isChangePending && exp.pending_changes && (
+        <div className="mt-1 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-800 rounded-xl text-sm">
+          <strong>Pending Edits:</strong>
+          <div className="mt-1 flex flex-col gap-1 text-xs">
+            {exp.pending_changes.total_amount && (
+              <div>Total: ?{exp.total_amount} ? <b>?{exp.pending_changes.total_amount}</b></div>
+            )}
+            {exp.pending_changes.creator_percentage && (
+              <div>Split: {exp.creator_percentage}% / {exp.other_percentage}% ? <b>{exp.pending_changes.creator_percentage}% / {exp.pending_changes.other_percentage}%</b></div>
+            )}
+          </div>
+          {!iRequestedChange && (
+            <div className="flex gap-2 mt-3 pt-2 border-t border-blue-500/20">
+              <button 
+                onClick={() => onApproveChange(exp.id)}
+                className="flex-1 items-center justify-center gap-1 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-bold text-center"
+              >
+                Approve Change
+              </button>
+              <button 
+                onClick={() => onRejectChange(exp.id)}
+                className="flex-1 items-center justify-center gap-1 text-sm bg-transparent text-blue-800 border border-blue-500/30 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 font-bold text-center"
+              >
+                Reject Change
+              </button>
+            </div>
+          )}
+          {iRequestedChange && (
+            <div className="mt-2 text-xs italic text-blue-600">Waiting for approval...</div>
+          )}
+        </div>
+      )}
 
       {exp.status === 'Declined' && exp.decline_reason && (
         <div className="mt-1 p-3 bg-red-500/10 border border-red-500/20 text-red-700 rounded-xl text-sm">
@@ -317,12 +411,14 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
             </button>
           </>
         )}
-        <button 
-          onClick={onEdit}
-          className="flex items-center gap-1 text-sm bg-primary-500/10 text-primary-700 px-3 py-1 rounded-lg hover:bg-primary-500/20"
-        >
-          <Edit2 size={16} /> Edit Split
-        </button>
+        {exp.status !== 'Change_Pending' && (
+          <button 
+            onClick={onEdit}
+            className="flex items-center gap-1 text-sm bg-primary-500/10 text-primary-700 px-3 py-1 rounded-lg hover:bg-primary-500/20"
+          >
+            <Edit2 size={16} /> Edit Split
+          </button>
+        )}
         {isCreator && (
           <button 
             onClick={() => onDelete(exp.id)}
