@@ -3,7 +3,7 @@ import { GlassCard, GlassButton, GlassInput, GlassModal } from '../components/ui
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getCategories } from '../utils/categories';
-import { CheckCircle2, Edit2, Trash2, XCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Edit2, Trash2, XCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function SharedExpenses() {
   const { user } = useAuth();
@@ -13,6 +13,7 @@ export default function SharedExpenses() {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [declineData, setDeclineData] = useState(null);
+  const [rejectChangeData, setRejectChangeData] = useState(null);
   
   const categories = getCategories(user.student_type);
   const [formData, setFormData] = useState({ 
@@ -21,6 +22,7 @@ export default function SharedExpenses() {
   
   const [editData, setEditData] = useState(null);
   const [declineReason, setDeclineReason] = useState('');
+  const [rejectChangeReason, setRejectChangeReason] = useState('');
 
   const fetchData = async () => {
     try {
@@ -79,12 +81,19 @@ export default function SharedExpenses() {
   };
 
   const handleStatusUpdate = async (id, status) => {
+    if (status === 'Declined' && !declineReason.trim()) {
+      alert("Please enter a reason for declining.");
+      return;
+    }
     try {
       await api.patch(`/shared/${id}`, { 
         status, 
         decline_reason: declineReason 
       });
-      if (status === 'Declined') setDeclineData(null);
+      if (status === 'Declined') {
+        setDeclineData(null);
+        setDeclineReason('');
+      }
       fetchData();
     } catch (err) {
       alert(err.response?.data?.error || "Error updating status");
@@ -100,9 +109,17 @@ export default function SharedExpenses() {
     }
   };
 
-  const handleRejectChange = async (id) => {
+  const handleRejectChangeSubmit = async () => {
+    if (!rejectChangeReason.trim()) {
+      alert("Please enter a reason for declining this change.");
+      return;
+    }
     try {
-      await api.post(`/shared/${id}/reject_change`);
+      await api.post(`/shared/${rejectChangeData.id}/reject_change`, {
+        reason: rejectChangeReason
+      });
+      setRejectChangeData(null);
+      setRejectChangeReason('');
       fetchData();
     } catch (err) {
       alert(err.response?.data?.error || "Error rejecting change");
@@ -138,11 +155,11 @@ export default function SharedExpenses() {
                   exp={exp} 
                   isCreator={false} 
                   user={user}
-                  onEdit={() => setEditData(exp)}
+                  onEdit={() => { setEditData(exp); setIsEditModalOpen(true); }}
                   onStatus={handleStatusUpdate}
                   onDeclineInit={() => setDeclineData(exp)}
                   onApproveChange={handleApproveChange}
-                  onRejectChange={handleRejectChange}
+                  onRejectChangeInit={() => setRejectChangeData(exp)}
                 />
               ))
             ) : (
@@ -164,10 +181,10 @@ export default function SharedExpenses() {
                   exp={exp} 
                   isCreator={true} 
                   user={user}
-                  onEdit={() => setEditData(exp)}
+                  onEdit={() => { setEditData(exp); setIsEditModalOpen(true); }}
                   onDelete={handleDelete}
                   onApproveChange={handleApproveChange}
-                  onRejectChange={handleRejectChange}
+                  onRejectChangeInit={() => setRejectChangeData(exp)}
                 />
               ))
             ) : (
@@ -177,20 +194,39 @@ export default function SharedExpenses() {
         </div>
       </div>
 
-      {/* Decline Modal */}
+      {/* Decline Initial Request Modal */}
       {declineData && (
-        <GlassModal isOpen={true} onClose={() => setDeclineData(null)} title="Decline Expense">
+        <GlassModal isOpen={true} onClose={() => setDeclineData(null)} title="Decline Shared Expense">
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-slate-600">Please provide a reason for declining this shared expense from {declineData.creator_name}:</p>
+            <p className="text-sm text-slate-600">Why are you declining this expense?</p>
             <textarea 
               className="w-full px-4 py-3 rounded-xl glass-input text-slate-800 resize-none h-24"
-              placeholder="e.g. I already paid you in cash..."
+              placeholder="Enter reason..."
               value={declineReason}
               onChange={(e) => setDeclineReason(e.target.value)}
             />
             <div className="flex gap-3 justify-end mt-2">
               <button onClick={() => setDeclineData(null)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Cancel</button>
-              <GlassButton onClick={() => handleStatusUpdate(declineData.id, 'Declined')} className="bg-red-500 text-white hover:bg-red-600">Decline Request</GlassButton>
+              <GlassButton onClick={() => handleStatusUpdate(declineData.id, 'Declined')} className="bg-red-500 text-white hover:bg-red-600">Decline & Send</GlassButton>
+            </div>
+          </div>
+        </GlassModal>
+      )}
+
+      {/* Decline Change Modal */}
+      {rejectChangeData && (
+        <GlassModal isOpen={true} onClose={() => setRejectChangeData(null)} title="Decline Change">
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600">Why are you declining this change?</p>
+            <textarea 
+              className="w-full px-4 py-3 rounded-xl glass-input text-slate-800 resize-none h-24"
+              placeholder="Enter reason..."
+              value={rejectChangeReason}
+              onChange={(e) => setRejectChangeReason(e.target.value)}
+            />
+            <div className="flex gap-3 justify-end mt-2">
+              <button onClick={() => setRejectChangeData(null)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Cancel</button>
+              <GlassButton onClick={handleRejectChangeSubmit} className="bg-red-500 text-white hover:bg-red-600">Decline & Send</GlassButton>
             </div>
           </div>
         </GlassModal>
@@ -257,12 +293,6 @@ export default function SharedExpenses() {
                 />
               </div>
             </div>
-            {formData.total_amount && (
-              <div className="flex justify-between text-sm mt-2 font-medium">
-                <span className="text-primary-700">My Share: ?{(parseFloat(formData.total_amount) * (parseFloat(formData.creator_percentage) || 0) / 100).toFixed(2)}</span>
-                <span className="text-mint-700">Friend's Share: ?{(parseFloat(formData.total_amount) * (100 - (parseFloat(formData.creator_percentage) || 0)) / 100).toFixed(2)}</span>
-              </div>
-            )}
           </div>
           <GlassButton type="submit" className="mt-4">Save Shared Expense</GlassButton>
         </form>
@@ -317,7 +347,9 @@ export default function SharedExpenses() {
   );
 }
 
-function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDeclineInit, onApproveChange, onRejectChange }) {
+function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDeclineInit, onApproveChange, onRejectChangeInit }) {
+  const [showHistory, setShowHistory] = useState(false);
+  
   const myPct = isCreator ? exp.creator_percentage : exp.other_percentage;
   const friendPct = isCreator ? exp.other_percentage : exp.creator_percentage;
   const myAmount = (exp.total_amount * myPct) / 100;
@@ -360,42 +392,102 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
       </div>
 
       {isChangePending && exp.pending_changes && (
-        <div className="mt-1 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-800 rounded-xl text-sm">
-          <strong>Pending Edits:</strong>
-          <div className="mt-1 flex flex-col gap-1 text-xs">
+        <div className="mt-1 p-4 bg-blue-500/10 border border-blue-500/20 text-blue-800 rounded-xl text-sm shadow-inner">
+          <strong className="text-blue-900 block mb-2 text-base">Expense Change Request</strong>
+          <div className="mb-3 text-slate-700">
+            {exp.change_requested_by === exp.creator_id ? exp.creator_name : exp.other_user_name} wants to change:
+          </div>
+          <div className="flex flex-col gap-1 text-sm bg-white/40 p-3 rounded-lg border border-white/50">
             {exp.pending_changes.total_amount && (
-              <div>Total: ?{exp.total_amount} ? <b>?{exp.pending_changes.total_amount}</b></div>
+              <div>
+                <span className="text-slate-500">Previous amount:</span> ?{exp.total_amount} <br/>
+                <span className="text-slate-500">New amount:</span> <b>?{exp.pending_changes.total_amount}</b> <br/>
+                <span className="text-slate-500">Difference:</span> <span className={exp.pending_changes.total_amount - exp.total_amount > 0 ? "text-red-600 font-bold" : "text-mint-600 font-bold"}>{exp.pending_changes.total_amount - exp.total_amount > 0 ? "+" : ""}?{(exp.pending_changes.total_amount - exp.total_amount).toFixed(2)}</span>
+              </div>
             )}
             {exp.pending_changes.creator_percentage && (
-              <div>Split: {exp.creator_percentage}% / {exp.other_percentage}% ? <b>{exp.pending_changes.creator_percentage}% / {exp.pending_changes.other_percentage}%</b></div>
+              <div className="mt-2 pt-2 border-t border-blue-500/10">
+                <span className="text-slate-500">Split:</span> {exp.creator_percentage}% / {exp.other_percentage}% ? <b>{exp.pending_changes.creator_percentage}% / {exp.pending_changes.other_percentage}%</b>
+              </div>
             )}
           </div>
           {!iRequestedChange && (
-            <div className="flex gap-2 mt-3 pt-2 border-t border-blue-500/20">
+            <div className="flex gap-2 mt-4">
               <button 
                 onClick={() => onApproveChange(exp.id)}
-                className="flex-1 items-center justify-center gap-1 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-bold text-center"
+                className="flex-1 items-center justify-center gap-1 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 font-bold text-center transition-colors shadow-sm"
               >
-                Approve Change
+                Accept Changes
               </button>
               <button 
-                onClick={() => onRejectChange(exp.id)}
-                className="flex-1 items-center justify-center gap-1 text-sm bg-transparent text-blue-800 border border-blue-500/30 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 font-bold text-center"
+                onClick={() => onRejectChangeInit(exp.id)}
+                className="flex-1 items-center justify-center gap-1 text-sm bg-white text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 font-bold text-center transition-colors shadow-sm"
               >
-                Reject Change
+                Decline
               </button>
             </div>
           )}
           {iRequestedChange && (
-            <div className="mt-2 text-xs italic text-blue-600">Waiting for approval...</div>
+            <div className="mt-3 text-sm italic text-blue-600/80 text-center font-medium">Waiting for friend's approval...</div>
           )}
         </div>
       )}
 
-      {exp.status === 'Declined' && exp.decline_reason && (
-        <div className="mt-1 p-3 bg-red-500/10 border border-red-500/20 text-red-700 rounded-xl text-sm">
-          <strong>Reason for declining:</strong>
-          <p className="mt-1 text-slate-600">{exp.decline_reason}</p>
+      {/* History Toggle */}
+      {exp.activities && exp.activities.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-slate-200/50">
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+          >
+            <Clock size={14} /> 
+            {showHistory ? 'Hide History' : 'View History'}
+            {showHistory ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+          </button>
+          
+          {showHistory && (
+            <div className="mt-3 flex flex-col gap-3 pl-2 border-l-2 border-slate-200">
+              {exp.activities.map((act, idx) => (
+                <div key={idx} className="relative pl-3">
+                  <div className="absolute w-2 h-2 bg-primary-400 rounded-full -left-[5px] top-1.5 ring-4 ring-white"></div>
+                  <div className="text-xs text-slate-400 mb-0.5">{new Date(act.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</div>
+                  <div className="text-sm text-slate-700">
+                    {act.action === 'created' && (
+                      <span><strong>{act.user_name}</strong> shared ?{act.details?.total_amount}</span>
+                    )}
+                    {act.action === 'accepted' && (
+                      <span className="text-mint-700"><strong>? Accepted</strong> by {act.user_name}</span>
+                    )}
+                    {act.action === 'declined' && (
+                      <div className="text-red-600">
+                        <strong>? Declined</strong> by {act.user_name}
+                        <div className="mt-1 bg-red-500/10 p-2 rounded text-xs">Reason: "{act.reason}"</div>
+                      </div>
+                    )}
+                    {act.action === 'change_requested' && (
+                      <div>
+                        <strong>{act.user_name}</strong> requested a change
+                        {act.details?.new_amount && (
+                          <div className="mt-1 font-mono text-xs">?{act.details.old_amount} ? ?{act.details.new_amount}</div>
+                        )}
+                      </div>
+                    )}
+                    {act.action === 'change_approved' && (
+                      <div className="text-mint-700">
+                        <strong>? Change accepted</strong> by {act.user_name}
+                      </div>
+                    )}
+                    {act.action === 'change_declined' && (
+                      <div className="text-red-600">
+                        <strong>? Change declined</strong> by {act.user_name}
+                        <div className="mt-1 bg-red-500/10 p-2 rounded text-xs">Reason: "{act.reason}"</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -416,12 +508,13 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
             </button>
           </>
         )}
-        {exp.status !== 'Change_Pending' && (
+        {/* ONLY creator can edit */}
+        {isCreator && exp.status !== 'Change_Pending' && (
           <button 
             onClick={onEdit}
             className="flex items-center gap-1 text-sm bg-primary-500/10 text-primary-700 px-3 py-1 rounded-lg hover:bg-primary-500/20"
           >
-            <Edit2 size={16} /> Edit Split
+            <Edit2 size={16} /> Edit
           </button>
         )}
         {isCreator && (
@@ -429,7 +522,7 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
             onClick={() => onDelete(exp.id)}
             className="flex items-center gap-1 text-sm bg-slate-500/10 text-slate-700 px-3 py-1 rounded-lg hover:bg-slate-500/20"
           >
-            <Trash2 size={16} /> Delete
+            <Trash2 size={16} /> Cancel Request
           </button>
         )}
       </div>

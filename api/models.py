@@ -183,6 +183,7 @@ class DirectSharedExpense(db.Model):
     creator = db.relationship('User', foreign_keys=[creator_id])
     other_user = db.relationship('User', foreign_keys=[other_user_id])
     changer = db.relationship('User', foreign_keys=[change_requested_by])
+    activities = db.relationship('DirectSharedExpenseActivity', backref='shared_expense', cascade="all, delete-orphan", order_by="DirectSharedExpenseActivity.created_at.asc()")
 
     def to_dict(self):
         import json
@@ -209,5 +210,37 @@ class DirectSharedExpense(db.Model):
             'status': self.status,
             'decline_reason': self.decline_reason,
             'pending_changes': changes,
-            'change_requested_by': self.change_requested_by
+            'change_requested_by': self.change_requested_by,
+            'activities': [a.to_dict() for a in self.activities]
+        }
+
+class DirectSharedExpenseActivity(db.Model):
+    __tablename__ = 'direct_shared_expense_activities'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('direct_shared_expenses.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    details = db.Column(db.Text, nullable=True) # JSON string
+    reason = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    def to_dict(self):
+        import json
+        details_obj = None
+        if self.details:
+            try:
+                details_obj = json.loads(self.details)
+            except:
+                pass
+        return {
+            'id': self.id,
+            'expense_id': self.expense_id,
+            'user_id': self.user_id,
+            'user_name': self.user.name if self.user else None,
+            'action': self.action,
+            'details': details_obj,
+            'reason': self.reason,
+            'created_at': self.created_at.isoformat()
         }

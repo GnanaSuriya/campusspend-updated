@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
-from models import DirectSharedExpense, User, Alert
+from models import DirectSharedExpense, DirectSharedExpenseActivity, User, Alert
 from database import db
 from utils.auth import require_auth
 from sqlalchemy import or_
@@ -8,6 +8,17 @@ from dateutil import parser
 import json
 
 direct_shared_bp = Blueprint('direct_shared', __name__)
+
+def log_activity(expense_id, user_id, action, details=None, reason=None):
+    details_str = json.dumps(details) if details else None
+    activity = DirectSharedExpenseActivity(
+        expense_id=expense_id,
+        user_id=user_id,
+        action=action,
+        details=details_str,
+        reason=reason
+    )
+    db.session.add(activity)
 
 @direct_shared_bp.route('', methods=['GET'])
 @require_auth
@@ -72,8 +83,16 @@ def create_shared_expense(user_id):
     )
     
     db.session.add(expense)
-    db.session.commit()
+    db.session.flush() # get expense.id
     
+    log_activity(
+        expense.id, 
+        user_id, 
+        'created', 
+        details={"total_amount": total_amount, "creator_percentage": creator_percentage, "description": data.get('description', '')}
+    )
+    
+    db.session.commit()
     return jsonify({"success": True, "data": expense.to_dict()}), 201
 
 @direct_shared_bp.route('/<int:exp_id>', methods=['PATCH'])
@@ -89,8 +108,11 @@ def update_shared_expense(user_id, exp_id):
         
     data = request.json
     
-    # If it's just a status update
+    # Check if it's an initial Accept/Decline action
     if 'status' in data and len(data) <= 2:
+        if expense.other_user_id != user_id:
+            return jsonify({"success": False, "error": "Only recipient can accept/decline"}), 403
+            
         new_status = data['status']
         if new_status == 'Declined':
             if 'decline_reason' not in data or not data['decline_reason'].strip():
@@ -98,14 +120,20 @@ def update_shared_expense(user_id, exp_id):
             expense.decline_reason = data['decline_reason'].strip()
             alert_msg = f"? {expense.other_user.name} declined your shared expense request ({expense.description}). Reason: {expense.decline_reason}"
             db.session.add(Alert(user_id=expense.creator_id, message=alert_msg))
+            log_activity(expense.id, user_id, 'declined', reason=expense.decline_reason)
             
         elif new_status == 'Accepted':
             alert_msg = f"? {expense.other_user.name} accepted your shared expense request ({expense.description})."
             db.session.add(Alert(user_id=expense.creator_id, message=alert_msg))
+            log_activity(expense.id, user_id, 'accepted')
             
         expense.status = new_status
         db.session.commit()
         return jsonify({"success": True, "data": expense.to_dict()}), 200
+
+    # If it's editing fields, ONLY CREATOR can edit
+    if expense.creator_id != user_id:
+        return jsonify({"success": False, "error": "Only the creator can edit this expense"}), 403
 
     modifying_fields = False
     new_changes = {}
@@ -139,10 +167,33 @@ def update_shared_expense(user_id, exp_id):
 
     if modifying_fields:
         if expense.status == 'Accepted':
+            if expense.pending_changes:
+                return jsonify({"success": False, "error": "A change request is already pending"}), 409
+                
             expense.status = 'Change_Pending'
             expense.pending_changes = json.dumps(new_changes)
             expense.change_requested_by = user_id
+            
+            # Create a structured details object for history
+            details = {}
+            if 'total_amount' in new_changes:
+                details['old_amount'] = expense.total_amount
+                details['new_amount'] = new_changes['total_amount']
+            if 'creator_percentage' in new_changes:
+                details['old_creator_percentage'] = expense.creator_percentage
+                details['old_other_percentage'] = expense.other_percentage
+                details['new_creator_percentage'] = new_changes['creator_percentage']
+                details['new_other_percentage'] = new_changes['other_percentage']
+            if 'description' in new_changes:
+                details['old_description'] = expense.description
+                details['new_description'] = new_changes['description']
+            if 'category' in new_changes:
+                details['old_category'] = expense.category
+                details['new_category'] = new_changes['category']
+                
+            log_activity(expense.id, user_id, 'change_requested', details=details)
         else:
+            # If it's still Pending or Declined, edit directly
             if 'creator_percentage' in new_changes:
                 expense.creator_percentage = new_changes['creator_percentage']
                 expense.other_percentage = new_changes['other_percentage']
@@ -153,7 +204,7 @@ def update_shared_expense(user_id, exp_id):
             if 'category' in new_changes:
                 expense.category = new_changes['category']
             
-            if expense.status == 'Declined' and expense.creator_id == user_id:
+            if expense.status == 'Declined':
                 expense.status = 'Pending'
 
     db.session.commit()
@@ -192,6 +243,8 @@ def approve_change(user_id, exp_id):
     expense.pending_changes = None
     expense.change_requested_by = None
     
+    log_activity(expense.id, user_id, 'change_approved')
+    
     db.session.commit()
     return jsonify({"success": True, "data": expense.to_dict()}), 200
 
@@ -199,6 +252,8 @@ def approve_change(user_id, exp_id):
 @require_auth
 def reject_change(user_id, exp_id):
     user_id = int(user_id)
+    data = request.json or {}
+    
     expense = DirectSharedExpense.query.get(exp_id)
     if not expense or expense.status != 'Change_Pending':
         return jsonify({"success": False, "error": "Invalid request"}), 400
@@ -209,9 +264,14 @@ def reject_change(user_id, exp_id):
     if expense.change_requested_by == user_id:
         return jsonify({"success": False, "error": "You cannot reject your own change request"}), 400
         
+    if not data.get('reason') or not data['reason'].strip():
+        return jsonify({"success": False, "error": "Please enter a reason for declining this change."}), 400
+        
     expense.status = 'Accepted'
     expense.pending_changes = None
     expense.change_requested_by = None
+    
+    log_activity(expense.id, user_id, 'change_declined', reason=data['reason'].strip())
     
     db.session.commit()
     return jsonify({"success": True, "data": expense.to_dict()}), 200
@@ -224,8 +284,8 @@ def delete_shared_expense(user_id, exp_id):
     if not expense:
         return jsonify({"success": False, "error": "Expense not found"}), 404
         
-    if expense.creator_id != user_id and expense.other_user_id != user_id:
-        return jsonify({"success": False, "error": "Unauthorized"}), 403
+    if expense.creator_id != user_id:
+        return jsonify({"success": False, "error": "Only the creator can delete this expense"}), 403
         
     db.session.delete(expense)
     db.session.commit()
