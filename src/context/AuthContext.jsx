@@ -35,9 +35,12 @@ export function AuthProvider({ children }) {
         setUser(res.data.data.user);
         return { success: true };
       }
-      return res.data;
+      const errData = res.data.error;
+      return { success: false, error: typeof errData === 'object' ? errData.message || 'Server error' : errData };
     } catch (err) {
-      return { success: false, error: err.response?.data?.error || "Login failed" };
+      let errorMsg = err.response?.data?.error || "Login failed";
+      if (typeof errorMsg === 'object') errorMsg = errorMsg.message || "Server error";
+      return { success: false, error: errorMsg };
     }
   };
 
@@ -49,9 +52,12 @@ export function AuthProvider({ children }) {
         setUser(res.data.data.user);
         return { success: true };
       }
-      return res.data;
+      const errData = res.data.error;
+      return { success: false, error: typeof errData === 'object' ? errData.message || 'Server error' : errData };
     } catch (err) {
-      return { success: false, error: err.response?.data?.error || "Registration failed" };
+      let errorMsg = err.response?.data?.error || "Registration failed";
+      if (typeof errorMsg === 'object') errorMsg = errorMsg.message || "Server error";
+      return { success: false, error: errorMsg };
     }
   };
 
