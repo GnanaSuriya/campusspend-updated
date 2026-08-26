@@ -27,7 +27,10 @@ except Exception as e:
     startup_error = traceback.format_exc()
 
 # Configure Database
-db_url = os.environ.get('DATABASE_URL', 'sqlite:///local.db')
+db_url = os.environ.get('DATABASE_URL', '').strip().strip('"').strip("'")
+if not db_url:
+    db_url = 'sqlite:///local.db'
+
 if db_url.startswith('postgres://'):
     db_url = db_url.replace('postgres://', 'postgresql://', 1)
 if db_url.startswith('postgresql://'):
