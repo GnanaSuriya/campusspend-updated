@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+
+  --color-mint-400: #34d399;
+  --color-mint-500: #10b981;
+}
+
+@layer base {
+  body {
+    @apply bg-[#f8f9ff] text-slate-800 font-sans min-h-screen overflow-x-hidden;
+  }
+}
+
+/* Glassmorphism utilities */
+@layer utilities {
+  .glass {
+    @apply bg-white/40 backdrop-blur-lg border border-white/60 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)];
+  }
+  .glass-button {
+    @apply bg-primary-600/90 text-white backdrop-blur hover:bg-primary-700 transition-all duration-300 active:scale-95 shadow-md;
+  }
+  .glass-input {
+    @apply bg-white/50 border border-white/60 backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary-500/50 transition-all duration-300;
+  }
+}
+
+/* Blob Animation */
+@keyframes float {
+  0% { transform: translateY(0px) scale(1); }
+  33% { transform: translateY(-20px) scale(1.05); }
+  66% { transform: translateY(10px) scale(0.95); }
+  100% { transform: translateY(0px) scale(1); }
+}
+
+.animate-float {
+  animation: float 8s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float 10s ease-in-out infinite;
+  animation-delay: -5s;
+}
