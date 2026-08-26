@@ -137,10 +137,11 @@ def get_dashboard(user_id):
     # Total spent
     total_spent = sum(t.amount for t in this_month_tx)
     for stx in shared_tx:
-        if stx.creator_id == user_id and stx.status != 'Declined':
-            total_spent += stx.total_amount * (stx.creator_percentage / 100.0)
-        elif stx.other_user_id == user_id and stx.status == 'Accepted':
-            total_spent += stx.total_amount * (stx.other_percentage / 100.0)
+        if stx.status in ['Accepted', 'Change_Pending']:
+            if stx.creator_id == user_id:
+                total_spent += stx.total_amount * (stx.creator_percentage / 100.0)
+            elif stx.other_user_id == user_id:
+                total_spent += stx.total_amount * (stx.other_percentage / 100.0)
     
     # Category breakdown
     category_totals = {}
@@ -148,13 +149,14 @@ def get_dashboard(user_id):
         category_totals[t.category] = category_totals.get(t.category, 0) + t.amount
     
     for stx in shared_tx:
-        cat = stx.category or 'Other'
-        if stx.creator_id == user_id and stx.status != 'Declined':
-            amount = stx.total_amount * (stx.creator_percentage / 100.0)
-            category_totals[cat] = category_totals.get(cat, 0) + amount
-        elif stx.other_user_id == user_id and stx.status == 'Accepted':
-            amount = stx.total_amount * (stx.other_percentage / 100.0)
-            category_totals[cat] = category_totals.get(cat, 0) + amount
+        if stx.status in ['Accepted', 'Change_Pending']:
+            cat = stx.category or 'Other'
+            if stx.creator_id == user_id:
+                amount = stx.total_amount * (stx.creator_percentage / 100.0)
+                category_totals[cat] = category_totals.get(cat, 0) + amount
+            elif stx.other_user_id == user_id:
+                amount = stx.total_amount * (stx.other_percentage / 100.0)
+                category_totals[cat] = category_totals.get(cat, 0) + amount
         
     # Get budget
     budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year_str).all()
@@ -177,10 +179,8 @@ def get_dashboard(user_id):
     for stx in DirectSharedExpense.query.filter(
         or_(DirectSharedExpense.creator_id == user_id, DirectSharedExpense.other_user_id == user_id)
     ).order_by(DirectSharedExpense.date.desc()).limit(10).all():
-        if stx.creator_id == user_id and stx.status == 'Declined':
-            continue # Don't show declined in recent
-        if stx.other_user_id == user_id and stx.status != 'Accepted':
-            continue # Friend only sees accepted in recent
+        if stx.status not in ['Accepted', 'Change_Pending']:
+            continue
             
         d = stx.to_dict()
         d['is_shared'] = True

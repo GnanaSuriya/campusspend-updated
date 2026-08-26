@@ -51,12 +51,17 @@ export default function SharedExpenses() {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.patch(`/shared/${editData.id}`, {
+      const res = await api.patch(`/shared/${editData.id}`, {
         creator_percentage: editData.creator_percentage,
         total_amount: editData.total_amount
       });
       setIsEditModalOpen(false);
       fetchData();
+      if (res.data.data.status === 'Change_Pending') {
+        alert("Change request sent.\nWaiting for your friend's approval.");
+      } else {
+        alert("Expense updated.");
+      }
     } catch (err) {
       alert(err.response?.data?.error || "Error editing expense");
     }
