@@ -33,8 +33,6 @@ if not db_url:
 
 if db_url.startswith('postgres://'):
     db_url = db_url.replace('postgres://', 'postgresql://', 1)
-if db_url.startswith('postgresql://'):
-    db_url = db_url.replace('postgresql://', 'postgresql+pg8000://', 1)
 
 try:
     if not startup_error:
