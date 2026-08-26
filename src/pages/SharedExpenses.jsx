@@ -42,6 +42,7 @@ export default function SharedExpenses() {
       setFormData({ description: '', total_amount: '', category: categories[0], creator_percentage: '50', other_user_email: '' });
       setIsExpenseModalOpen(false);
       fetchData();
+      alert("Request sent successfully!");
     } catch (err) {
       alert(err.response?.data?.error || "Error adding shared expense");
     }

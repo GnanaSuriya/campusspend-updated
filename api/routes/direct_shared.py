@@ -70,7 +70,7 @@ def create_shared_expense(user_id):
         
     other_user = User.query.filter(db.func.lower(User.email) == other_email).first()
     if not other_user:
-        return jsonify({"success": False, "error": "Account Not Found. No account exists with this Gmail address."}), 404
+        return jsonify({"success": False, "error": "This account doesn't exist."}), 404
     
     date_val = datetime.utcnow()
     if 'date' in data and data['date']:

@@ -84,7 +84,7 @@ export default function Dashboard() {
         <GlassCard className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-slate-500 font-medium">
             <TrendingDown size={18} />
-            <span>Spent this Month</span>
+            <span>Spent</span>
           </div>
           <span className="text-4xl font-extrabold text-slate-800">₹{data.total_spent.toFixed(2)}</span>
         </GlassCard>
@@ -92,7 +92,7 @@ export default function Dashboard() {
         <GlassCard className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-slate-500 font-medium">
             <Target size={18} />
-            <span>Monthly Budget</span>
+            <span>Budget</span>
           </div>
           <span className="text-4xl font-extrabold text-slate-800">
             {data.budget > 0 ? `₹${data.budget.toFixed(2)}` : 'Not Set'}
