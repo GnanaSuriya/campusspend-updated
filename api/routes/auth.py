@@ -90,3 +90,22 @@ def update_me(user_id):
         
     db.session.commit()
     return jsonify({"success": True, "data": user.to_dict()}), 200
+
+@auth_bp.route('/reset', methods=['DELETE'])
+@require_auth
+def reset_data(user_id):
+    from models import Transaction, Budget, DirectSharedExpense, Alert
+    from sqlalchemy import or_
+
+    Transaction.query.filter_by(user_id=user_id).delete()
+    Budget.query.filter_by(user_id=user_id).delete()
+    Alert.query.filter_by(user_id=user_id).delete()
+    DirectSharedExpense.query.filter(
+        or_(
+            DirectSharedExpense.creator_id == user_id,
+            DirectSharedExpense.other_user_id == user_id
+        )
+    ).delete()
+    
+    db.session.commit()
+    return jsonify({"success": True, "data": None}), 200

@@ -1,29 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { GlassCard } from '../components/ui';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, IndianRupee, TrendingDown, Target } from 'lucide-react';
+import { AlertCircle, IndianRupee, TrendingDown, Target, RefreshCw } from 'lucide-react';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [alerts, setAlerts] = useState([]);
 
-  useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const [dashRes, alertsRes] = await Promise.all([
-          api.get('/transactions/dashboard'),
-          api.get('/budgets/alerts')
-        ]);
-        if (dashRes.data.success) setData(dashRes.data.data);
-        if (alertsRes.data.success) setAlerts(alertsRes.data.data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchDashboard();
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const [dashRes, alertsRes] = await Promise.all([
+        api.get('/transactions/dashboard'),
+        api.get('/budgets/alerts')
+      ]);
+      if (dashRes.data.success) setData(dashRes.data.data);
+      if (alertsRes.data.success) setAlerts(alertsRes.data.data);
+    } catch (err) {
+      console.error(err);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  const handleReset = async () => {
+    if (window.confirm("Are you sure you want to reset all expense data? This will clear your budget, expenses, shared expenses, and Shared by Me data.")) {
+      try {
+        await api.delete('/auth/reset');
+        await fetchDashboard();
+      } catch (err) {
+        console.error("Failed to reset data:", err);
+      }
+    }
+  };
 
   if (!data) return <div>Loading...</div>;
 
@@ -32,9 +44,17 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-8 pb-12 animate-in fade-in duration-500">
-      <header>
-        <h1 className="text-3xl font-extrabold text-slate-800">Dashboard</h1>
-        <p className="text-slate-600 mt-1">Welcome back, {user?.name}</p>
+      <header className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-800">Dashboard</h1>
+          <p className="text-slate-600 mt-1">Welcome back, {user?.name}</p>
+        </div>
+        <button 
+          onClick={handleReset}
+          className="flex items-center gap-2 text-sm bg-red-500/10 text-red-700 px-4 py-2 rounded-xl hover:bg-red-500/20 font-bold transition-colors"
+        >
+          <RefreshCw size={16} /> Reset Data
+        </button>
       </header>
 
       {data?.pending_requests_count > 0 && (

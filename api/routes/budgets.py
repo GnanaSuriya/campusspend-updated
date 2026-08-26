@@ -39,7 +39,7 @@ def set_budget(user_id):
         
     budget = Budget.query.filter_by(user_id=user_id, category=category, month_year=month_year).first()
     if budget:
-        budget.amount = amount
+        budget.amount += amount
     else:
         budget = Budget(user_id=user_id, category=category, amount=amount, month_year=month_year)
         db.session.add(budget)

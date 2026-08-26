@@ -327,7 +327,7 @@ function ExpenseCard({ exp, isCreator, user, onEdit, onDelete, onStatus, onDecli
             onClick={() => onDelete(exp.id)}
             className="flex items-center gap-1 text-sm bg-slate-500/10 text-slate-700 px-3 py-1 rounded-lg hover:bg-slate-500/20"
           >
-            <Trash2 size={16} /> Cancel
+            <Trash2 size={16} /> Delete
           </button>
         )}
       </div>
