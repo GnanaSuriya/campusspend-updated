@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+﻿from flask import Blueprint, request, jsonify
 from datetime import datetime
 from models import DirectSharedExpense, DirectSharedExpenseActivity, DirectSharedExpenseParticipant, DirectSharedExpensePayer, User, Alert
 from database import db

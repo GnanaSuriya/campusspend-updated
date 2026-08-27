@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Calculates net balances for all users in a list of expenses.
  * Net Balance = Total Paid - Total Owed.
  * Positive balance = user is owed money (they paid more than their share).

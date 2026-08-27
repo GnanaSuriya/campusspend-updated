@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { GlassModal, GlassButton, GlassInput } from '../ui';
 import { useAuth } from '../../context/AuthContext';
 import { Plus, X, Percent, CheckCircle2 } from 'lucide-react';

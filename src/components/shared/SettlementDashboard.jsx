@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { GlassCard } from '../ui';
 import { calculateBalances, optimizeSettlements } from '../../utils/settlements';
 import { useAuth } from '../../context/AuthContext';

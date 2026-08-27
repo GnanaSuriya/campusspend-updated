@@ -1,4 +1,4 @@
-from sqlalchemy import extract, or_
+﻿from sqlalchemy import extract, or_
 from models import Transaction, DirectSharedExpense, DirectSharedExpenseParticipant, Budget
 import json
 

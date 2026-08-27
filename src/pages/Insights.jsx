@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+ï»¿import React, { useState, useEffect } from 'react';
 import { GlassCard, GlassButton } from '../components/ui';
 import api from '../utils/api';
 import { Lightbulb, TrendingUp, AlertTriangle, Target, RefreshCw, BarChart3, PieChart as PieChartIcon } from 'lucide-react';
@@ -166,7 +166,7 @@ export default function Insights() {
             <ul className="space-y-3">
               {insights.warnings.map((warning, idx) => (
                 <li key={idx} className="flex gap-2 text-slate-600 dark:text-slate-300 text-sm">
-                  <span className="text-red-500 mt-1">•</span>
+                  <span className="text-red-500 mt-1">â€¢</span>
                   <span>{warning}</span>
                 </li>
               ))}
@@ -199,7 +199,7 @@ export default function Insights() {
             <ul className="space-y-3">
               {insights.recommendations.map((rec, idx) => (
                 <li key={idx} className="flex gap-2 text-slate-600 dark:text-slate-300 text-sm">
-                  <span className="text-primary-500 mt-0.5">•</span>
+                  <span className="text-primary-500 mt-0.5">â€¢</span>
                   <span>{rec}</span>
                 </li>
               ))}
