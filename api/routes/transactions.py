@@ -62,7 +62,8 @@ def get_dashboard(user_id):
         "success": True, 
         "data": {
             "name": user.name,
-            "overall_budget": summary["total_budget"],
+            "budget": summary["total_budget"],
+            "remaining": summary["remaining"],
             "total_spent": summary["total_spent"],
             "category_budgets": summary["categories"]
         }
