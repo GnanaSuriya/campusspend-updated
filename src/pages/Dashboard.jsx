@@ -7,6 +7,8 @@ import { AlertCircle, IndianRupee, TrendingDown, Target, RefreshCw } from 'lucid
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [alerts, setAlerts] = useState([]);
 
   const fetchDashboard = useCallback(async () => {
@@ -26,14 +28,23 @@ export default function Dashboard() {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  const handleReset = async () => {
-    if (window.confirm("Are you sure you want to reset all expense data? This will clear your budget, expenses, shared expenses, and Shared by Me data.")) {
-      try {
-        await api.delete('/auth/reset');
-        await fetchDashboard();
-      } catch (err) {
-        console.error("Failed to reset data:", err);
-      }
+  const executeReset = async () => {
+    setIsResetting(true);
+    try {
+      await api.delete('/auth/reset');
+      
+      // Clear IndexedDB cache
+      const req = indexedDB.deleteDatabase('CampusSpendDB');
+      req.onsuccess = () => console.log("Local cache cleared");
+      
+      alert("Your CampusSpend data has been reset.");
+      setShowResetModal(false);
+      await fetchDashboard();
+    } catch (err) {
+      console.error("Failed to reset data:", err);
+      alert("Could not reset your data. Please try again.");
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -50,7 +61,7 @@ export default function Dashboard() {
           <p className="text-slate-600 dark:text-slate-300 mt-1">Welcome back, {user?.name}</p>
         </div>
         <button 
-          onClick={handleReset}
+          onClick={() => setShowResetModal(true)}
           className="flex items-center gap-2 text-sm bg-red-500/10 text-red-700 px-4 py-2 rounded-xl hover:bg-red-500/20 font-bold transition-colors"
         >
           <RefreshCw size={16} /> Reset Data
@@ -184,6 +195,37 @@ export default function Dashboard() {
           )}
         </GlassCard>
       </div>
+{showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={() => !isResetting && setShowResetModal(false)} />
+          <div className="relative w-full max-w-md animate-in fade-in zoom-in duration-200">
+            <GlassCard className="p-6">
+              <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
+                <AlertCircle size={24} /> Reset all your CampusSpend data?
+              </h2>
+              <p className="text-slate-600 dark:text-slate-300 mb-6">
+                This will remove your budgets, expenses, and related financial data. Your account will not be deleted.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button 
+                  onClick={() => setShowResetModal(false)} 
+                  disabled={isResetting}
+                  className="px-4 py-2 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={executeReset} 
+                  disabled={isResetting}
+                  className="px-4 py-2 font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition"
+                >
+                  {isResetting ? 'Resetting...' : 'Reset Data'}
+                </button>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

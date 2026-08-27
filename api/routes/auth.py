@@ -94,18 +94,38 @@ def update_me(user_id):
 @auth_bp.route('/reset', methods=['DELETE'])
 @require_auth
 def reset_data(user_id):
-    from models import Transaction, Budget, DirectSharedExpense, Alert
-    from sqlalchemy import or_
-
+    from models import Transaction, Budget, DirectSharedExpense, Alert, DirectSharedExpenseParticipant, DirectSharedExpensePayer
+    
+    # 1. Delete all transactions
     Transaction.query.filter_by(user_id=user_id).delete()
+    
+    # 2. Delete all budgets
     Budget.query.filter_by(user_id=user_id).delete()
+    
+    # 3. Delete all alerts
     Alert.query.filter_by(user_id=user_id).delete()
-    DirectSharedExpense.query.filter(
-        or_(
-            DirectSharedExpense.creator_id == user_id,
-            DirectSharedExpense.other_user_id == user_id
-        )
-    ).delete()
+    
+    # 4. Handle shared expenses
+    # Expenses created by this user
+    created_expenses = DirectSharedExpense.query.filter_by(creator_id=user_id).all()
+    for e in created_expenses:
+        db.session.delete(e) # This triggers ORM cascade for participants, payers, activities
+        
+    # Remove user as participant from other people's expenses
+    my_participations = DirectSharedExpenseParticipant.query.filter(
+        DirectSharedExpenseParticipant.user_id == user_id,
+        DirectSharedExpenseParticipant.expense_id.notin_([e.id for e in created_expenses])
+    ).all()
+    for p in my_participations:
+        db.session.delete(p)
+        
+    # Remove user as payer from other people's expenses
+    my_payments = DirectSharedExpensePayer.query.filter(
+        DirectSharedExpensePayer.user_id == user_id,
+        DirectSharedExpensePayer.expense_id.notin_([e.id for e in created_expenses])
+    ).all()
+    for p in my_payments:
+        db.session.delete(p)
     
     db.session.commit()
     return jsonify({"success": True, "data": None}), 200

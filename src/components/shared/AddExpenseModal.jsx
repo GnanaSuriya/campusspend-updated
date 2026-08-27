@@ -19,6 +19,9 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
   const [foundFriend, setFoundFriend] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [payerName, setPayerName] = useState('');
+  const [payerSearchStatus, setPayerSearchStatus] = useState(null);
+  const [foundPayer, setFoundPayer] = useState(null);
+  const [isPayerSearching, setIsPayerSearching] = useState(false);
 
   // Auto-recalculate amounts when total or mode changes
   useEffect(() => {
@@ -90,11 +93,44 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
     setParticipants(participants.filter((_, i) => i !== idx));
   };
 
-  const addPayer = () => {
-    if (payerName && !payers.find(p => p.name.toLowerCase() === payerName.toLowerCase())) {
-      setPayers([...payers, { name: payerName, amount: 0 }]);
-      setPayerName('');
+  const searchPayer = async () => {
+    if (!payerName.trim()) {
+      setPayerSearchStatus("Please enter a friend's name.");
+      setFoundPayer(null);
+      return;
     }
+    
+    setIsPayerSearching(true);
+    setPayerSearchStatus(null);
+    try {
+      const res = await api.get(`/auth/search?q=${encodeURIComponent(payerName)}`);
+      if (res.data.success) {
+        setFoundPayer(res.data.data);
+        setPayerSearchStatus(`? User exists: ${res.data.data.name}`);
+      }
+    } catch (err) {
+      setFoundPayer(null);
+      setPayerSearchStatus("Friend not found. No CampusSpend account exists with this name.");
+    } finally {
+      setIsPayerSearching(false);
+    }
+  };
+
+  const addPayer = () => {
+    if (!foundPayer) {
+      if (payerName) searchPayer();
+      return;
+    }
+    
+    if (payers.find(p => p.user_id === foundPayer.id || p.name.toLowerCase() === foundPayer.name.toLowerCase())) {
+      setPayerSearchStatus("User is already a payer.");
+      return;
+    }
+    
+    setPayers([...payers, { name: foundPayer.name, user_id: foundPayer.id, amount: 0 }]);
+    setPayerName('');
+    setFoundPayer(null);
+    setPayerSearchStatus(null);
   };
 
   const updateParticipant = (idx, field, val) => {
@@ -139,6 +175,7 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
     // Map to API format
     const pData = participants.map(p => ({
       user_name: p.name,
+      user_id: p.user_id,
       amount: p.amount,
       percentage: splitMode === 'Ratio' ? p.percentage : parseFloat(((p.amount / expenseTotal) * 100).toFixed(2))
     }));
