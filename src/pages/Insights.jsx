@@ -1,158 +1,212 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard, GlassButton } from '../components/ui';
 import api from '../utils/api';
-import { Lightbulb, AlertTriangle, TrendingDown, Target, Wallet } from 'lucide-react';
+import { Lightbulb, TrendingUp, AlertTriangle, Target, RefreshCw, BarChart3, PieChart as PieChartIcon } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function Insights() {
   const [insights, setInsights] = useState(null);
+  const [charts, setCharts] = useState({ weekly: [], categories: [] });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [outdated, setOutdated] = useState(false);
+
+  const fetchCharts = async () => {
+    try {
+      const res = await api.get('/insights/charts');
+      if (res.data.success) {
+        setCharts(res.data.data);
+      }
+    } catch (e) {
+      console.error("Failed to load charts");
+    }
+  };
 
   const fetchInsights = async () => {
     setLoading(true);
-    setError(null);
-    setOutdated(false);
+    setError('');
     try {
       const res = await api.post('/insights');
       if (res.data.success) {
         setInsights(res.data.data);
-        localStorage.setItem('campusspend_ai_insights', JSON.stringify(res.data.data));
-        localStorage.setItem('campusspend_ai_outdated', 'false');
+        setOutdated(false);
+        localStorage.removeItem('campusspend_ai_outdated');
       }
     } catch (err) {
-      setError(err.response?.data?.error || "Insights are temporarily unavailable. Please try again later.");
-    } finally {
-      setLoading(false);
+      setError(err.response?.data?.error || "Error generating insights");
     }
+    setLoading(false);
   };
 
   useEffect(() => {
-    // Check if outdated
-    const isOutdated = localStorage.getItem('campusspend_ai_outdated') === 'true';
-    setOutdated(isOutdated);
-    
-    // Load from cache
-    const cached = localStorage.getItem('campusspend_ai_insights');
-    if (cached) {
-      try {
-        setInsights(JSON.parse(cached));
-      } catch (e) {
-        fetchInsights();
-      }
+    fetchCharts();
+    if (localStorage.getItem('campusspend_ai_outdated') === 'true') {
+      setOutdated(true);
     } else {
       fetchInsights();
     }
+    
+    const interval = setInterval(() => {
+      if (localStorage.getItem('campusspend_ai_outdated') === 'true' && !outdated) {
+        setOutdated(true);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="flex flex-col gap-8 pb-12 animate-in fade-in duration-500">
-      <header className="flex justify-between items-center">
+    <div className="space-y-6">
+      <div className="flex justify-between items-end mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">AI Insights</h1>
-          <p className="text-slate-600 mt-1">Smart analysis of your real spending habits</p>
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600 dark:from-white dark:to-slate-300">
+            Spend Analytics & AI Insights
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-2">Visual breakdowns and personalized AI financial advice.</p>
         </div>
-        <GlassButton onClick={fetchInsights} disabled={loading} className="whitespace-nowrap">
-          {loading ? 'Analyzing...' : 'Refresh Insights'}
+        <GlassButton onClick={fetchInsights} disabled={loading} className="flex items-center gap-2 px-4 py-2">
+          <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+          {loading ? "Analyzing..." : "Refresh Insights"}
         </GlassButton>
-      </header>
+      </div>
 
-      {outdated && insights && (
-        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 p-4 rounded-xl flex justify-between items-center">
-          <span>Your spending changed.</span>
-          <button onClick={fetchInsights} className="text-sm font-bold underline hover:text-amber-800">Refresh Insights</button>
+      {outdated && !loading && (
+        <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/50 p-4 rounded-xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="text-amber-500" />
+            <p className="text-amber-800 dark:text-amber-200 font-medium">Your spending has changed! Refresh to update your AI insights.</p>
+          </div>
+          <GlassButton onClick={fetchInsights} className="bg-amber-500 hover:bg-amber-600">Refresh Now</GlassButton>
         </div>
       )}
 
-      {loading && !insights ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-        </div>
-      ) : error ? (
-        <GlassCard className="p-8 text-center bg-red-500/10 border-red-500/20">
-          <AlertTriangle className="mx-auto mb-4 text-red-500" size={32} />
-          <h3 className="text-lg font-bold text-slate-800 mb-2">{error.includes('No spending') ? 'No spending data yet.' : 'Insights Unavailable'}</h3>
-          <p className="text-slate-600">{error}</p>
+      {/* Visual Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <GlassCard className="p-6 h-80">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+            <BarChart3 className="text-primary-500" />
+            Monthly Spending
+          </h2>
+          <ResponsiveContainer width="100%" height="80%">
+            <BarChart data={charts.weekly}>
+              <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `?${value}`} />
+              <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+              <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </GlassCard>
-      ) : insights ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* Card 1: Spending Overview */}
-          <GlassCard className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-primary-700">
-              <Wallet size={20} />
-              <h2 className="text-lg font-bold">Spending Overview</h2>
-            </div>
-            <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{insights.summary}</p>
-          </GlassCard>
 
-          {/* Card 2: Biggest Expense */}
-          <GlassCard className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-rose-600">
-              <TrendingDown size={20} />
-              <h2 className="text-lg font-bold">Biggest Expense</h2>
-            </div>
-            {insights.top_category && (
-              <div>
-                <h3 className="text-2xl font-extrabold text-slate-800">{insights.top_category.name}</h3>
-                <p className="text-slate-600 mt-1">?{insights.top_category.amount} spent</p>
-                <p className="text-sm text-slate-500">{insights.top_category.percentage}% of your total spending.</p>
-              </div>
-            )}
-          </GlassCard>
-
-          {/* Card 3: Watch Out */}
-          {insights.warnings && insights.warnings.length > 0 && (
-            <GlassCard className="flex flex-col gap-4">
-              <div className="flex items-center gap-2 text-amber-600">
-                <AlertTriangle size={20} />
-                <h2 className="text-lg font-bold">Watch Out</h2>
-              </div>
-              <ul className="flex flex-col gap-2">
-                {insights.warnings.map((w, i) => (
-                  <li key={i} className="text-slate-700 bg-amber-500/10 p-3 rounded-lg text-sm">{w}</li>
-                ))}
-              </ul>
-            </GlassCard>
+        <GlassCard className="p-6 h-80">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+            <PieChartIcon className="text-mint-500" />
+            Category Breakdown
+          </h2>
+          {charts.categories.length > 0 ? (
+            <ResponsiveContainer width="100%" height="80%">
+              <PieChart>
+                <Pie data={charts.categories} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                  {charts.categories.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `?${value}`} contentStyle={{ borderRadius: '8px', border: 'none' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-500">No data for this month.</div>
           )}
+        </GlassCard>
+      </div>
 
-          {/* Card 4: Saving Opportunity */}
-          {insights.saving_suggestions && insights.saving_suggestions.length > 0 && (
-            <GlassCard className="flex flex-col gap-4 md:col-span-2">
-              <div className="flex items-center gap-2 text-mint-600">
-                <Target size={20} />
-                <h2 className="text-lg font-bold">Saving Opportunity</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {insights.saving_suggestions.map((s, i) => (
-                  <div key={i} className="bg-white/40 p-4 rounded-xl border border-white/60 flex flex-col gap-2">
-                    <p className="text-slate-700 font-medium">{s.suggestion}</p>
-                    <div className="mt-2 text-mint-700 font-bold bg-mint-500/10 self-start px-3 py-1 rounded-full text-sm">
-                      Potential saving: ?{s.suggested_reduction}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
-          )}
-
-          {/* Card 5: Recommendation */}
-          {insights.recommendations && insights.recommendations.length > 0 && (
-            <GlassCard className="flex flex-col gap-4 md:col-span-2">
-              <div className="flex items-center gap-2 text-blue-600">
-                <Lightbulb size={20} />
-                <h2 className="text-lg font-bold">Recommendation</h2>
-              </div>
-              <ul className="flex flex-col gap-3">
-                {insights.recommendations.map((r, i) => (
-                  <li key={i} className="text-slate-700">{r}</li>
-                ))}
-              </ul>
-            </GlassCard>
-          )}
-          
+      {error && (
+        <div className="glass p-6 rounded-2xl bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800/30 flex items-start gap-4">
+          <AlertTriangle className="text-red-500 shrink-0 mt-1" />
+          <div>
+            <h3 className="font-bold text-red-800 dark:text-red-300">Analysis Failed</h3>
+            <p className="text-red-600 dark:text-red-400 mt-1">{error}</p>
+          </div>
         </div>
-      ) : null}
+      )}
+
+      {insights && !loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Summary Card - Spans full width on lg */}
+          <GlassCard className="p-6 lg:col-span-3">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-primary-100 dark:bg-primary-900/50 rounded-xl text-primary-600 dark:text-primary-400">
+                <Lightbulb size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-lg">Spending Overview</h3>
+                <p className="text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">{insights.summary}</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp className="text-amber-500" size={20} />
+              <h3 className="font-bold text-slate-800 dark:text-white">Biggest Expense</h3>
+            </div>
+            <div className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-orange-500 mb-2">
+              {insights.top_category.name}
+            </div>
+            <p className="text-slate-600 dark:text-slate-400">
+              ?{insights.top_category.amount} ({insights.top_category.percentage}% of spending)
+            </p>
+          </GlassCard>
+
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="text-red-500" size={20} />
+              <h3 className="font-bold text-slate-800 dark:text-white">Watch Out</h3>
+            </div>
+            <ul className="space-y-3">
+              {insights.warnings.map((warning, idx) => (
+                <li key={idx} className="flex gap-2 text-slate-600 dark:text-slate-300 text-sm">
+                  <span className="text-red-500 mt-1">•</span>
+                  <span>{warning}</span>
+                </li>
+              ))}
+            </ul>
+          </GlassCard>
+
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Target className="text-mint-500" size={20} />
+              <h3 className="font-bold text-slate-800 dark:text-white">Saving Opportunity</h3>
+            </div>
+            <div className="space-y-4">
+              {insights.saving_suggestions.map((sug, idx) => (
+                <div key={idx} className="bg-white/40 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-bold text-slate-700 dark:text-slate-200">{sug.category}</span>
+                    <span className="text-mint-600 dark:text-mint-400 font-bold">-?{sug.suggested_reduction}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{sug.suggestion}</p>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+          
+          <GlassCard className="p-6 lg:col-span-3">
+             <div className="flex items-center gap-3 mb-4">
+              <Lightbulb className="text-primary-500" size={20} />
+              <h3 className="font-bold text-slate-800 dark:text-white">Actionable Recommendations</h3>
+            </div>
+            <ul className="space-y-3">
+              {insights.recommendations.map((rec, idx) => (
+                <li key={idx} className="flex gap-2 text-slate-600 dark:text-slate-300 text-sm">
+                  <span className="text-primary-500 mt-0.5">•</span>
+                  <span>{rec}</span>
+                </li>
+              ))}
+            </ul>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 }

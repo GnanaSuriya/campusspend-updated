@@ -1,5 +1,5 @@
-from datetime import datetime
 from database import db
+from datetime import datetime
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -7,46 +7,42 @@ class User(db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    student_type = db.Column(db.String(20), nullable=False) # 'Hosteller' or 'Day Scholar'
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    student_type = db.Column(db.String(20), default='Hosteller')
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
             'email': self.email,
-            'student_type': self.student_type,
-            'created_at': self.created_at.isoformat()
+            'student_type': self.student_type
         }
 
 class Transaction(db.Model):
     __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    description = db.Column(db.String(200), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(50), nullable=False)
-    description = db.Column(db.String(200))
     date = db.Column(db.DateTime, default=datetime.utcnow)
-    payment_method = db.Column(db.String(50))
 
     def to_dict(self):
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'description': self.description,
             'amount': self.amount,
             'category': self.category,
-            'description': self.description,
-            'date': self.date.isoformat(),
-            'payment_method': self.payment_method
+            'date': self.date.isoformat()
         }
 
 class Budget(db.Model):
     __tablename__ = 'budgets'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    category = db.Column(db.String(50), nullable=False) # 'Overall' or specific category
+    category = db.Column(db.String(50), nullable=False) # 'Overall' for total budget
     amount = db.Column(db.Float, nullable=False)
-    month_year = db.Column(db.String(7), nullable=False) # e.g. '2023-10'
+    month_year = db.Column(db.String(7), nullable=False) # 'YYYY-MM'
 
     def to_dict(self):
         return {
@@ -163,27 +159,75 @@ class Settlement(db.Model):
             'status': self.status
         }
 
+class DirectSharedExpenseParticipant(db.Model):
+    __tablename__ = 'direct_shared_expense_participants'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('direct_shared_expenses.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    amount_owed = db.Column(db.Float, nullable=False)
+    percentage = db.Column(db.Float, nullable=True)
+    status = db.Column(db.String(50), default='Pending') # Pending, Accepted, Declined
+    decline_reason = db.Column(db.String(250), nullable=True)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'expense_id': self.expense_id,
+            'user_id': self.user_id,
+            'user_name': self.user.name if self.user else None,
+            'amount_owed': self.amount_owed,
+            'percentage': self.percentage,
+            'status': self.status,
+            'decline_reason': self.decline_reason
+        }
+
+class DirectSharedExpensePayer(db.Model):
+    __tablename__ = 'direct_shared_expense_payers'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('direct_shared_expenses.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    amount_paid = db.Column(db.Float, nullable=False)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'expense_id': self.expense_id,
+            'user_id': self.user_id,
+            'user_name': self.user.name if self.user else None,
+            'amount_paid': self.amount_paid
+        }
+
+
 class DirectSharedExpense(db.Model):
     __tablename__ = 'direct_shared_expenses'
     id = db.Column(db.Integer, primary_key=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    other_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    other_user_email = db.Column(db.String(120), nullable=False)
+    other_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False) # Legacy, used as fallback for 1-to-1, or just set to first participant
+    other_user_email = db.Column(db.String(120), nullable=False) # Legacy
     total_amount = db.Column(db.Float, nullable=False)
-    creator_percentage = db.Column(db.Float, nullable=False)
-    other_percentage = db.Column(db.Float, nullable=False)
+    creator_percentage = db.Column(db.Float, nullable=False) # Legacy
+    other_percentage = db.Column(db.Float, nullable=False) # Legacy
     description = db.Column(db.String(200))
     category = db.Column(db.String(50))
     date = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), default='Pending') # Pending, Accepted, Declined, Change_Pending
+    status = db.Column(db.String(50), default='Pending') # Pending, Accepted, Declined, Change_Pending, Mixed
     decline_reason = db.Column(db.String(250), nullable=True)
     pending_changes = db.Column(db.Text, nullable=True) # JSON string
     change_requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    # New GDG Fields
+    split_mode = db.Column(db.String(50), default='Uniform')
 
     creator = db.relationship('User', foreign_keys=[creator_id])
     other_user = db.relationship('User', foreign_keys=[other_user_id])
     changer = db.relationship('User', foreign_keys=[change_requested_by])
     activities = db.relationship('DirectSharedExpenseActivity', backref='shared_expense', cascade="all, delete-orphan", order_by="DirectSharedExpenseActivity.created_at.asc()")
+    participants = db.relationship('DirectSharedExpenseParticipant', backref='shared_expense', cascade="all, delete-orphan")
+    payers = db.relationship('DirectSharedExpensePayer', backref='shared_expense', cascade="all, delete-orphan")
 
     def to_dict(self):
         import json
@@ -193,6 +237,39 @@ class DirectSharedExpense(db.Model):
                 changes = json.loads(self.pending_changes)
             except:
                 pass
+                
+        # If legacy record without participants/payers, dynamically generate them for the frontend
+        p_list = [p.to_dict() for p in self.participants]
+        payer_list = [p.to_dict() for p in self.payers]
+        
+        if not p_list:
+            # Fallback legacy 1-to-1 simulation
+            p_list = [
+                {
+                    'user_id': self.creator_id,
+                    'user_name': self.creator.name if self.creator else None,
+                    'amount_owed': (self.total_amount * self.creator_percentage) / 100,
+                    'percentage': self.creator_percentage,
+                    'status': 'Accepted'
+                },
+                {
+                    'user_id': self.other_user_id,
+                    'user_name': self.other_user.name if self.other_user else None,
+                    'amount_owed': (self.total_amount * self.other_percentage) / 100,
+                    'percentage': self.other_percentage,
+                    'status': self.status
+                }
+            ]
+        if not payer_list:
+            # Fallback legacy payer (creator paid 100%)
+            payer_list = [
+                {
+                    'user_id': self.creator_id,
+                    'user_name': self.creator.name if self.creator else None,
+                    'amount_paid': self.total_amount
+                }
+            ]
+            
         return {
             'id': self.id,
             'creator_id': self.creator_id,
@@ -211,7 +288,10 @@ class DirectSharedExpense(db.Model):
             'decline_reason': self.decline_reason,
             'pending_changes': changes,
             'change_requested_by': self.change_requested_by,
-            'activities': [a.to_dict() for a in self.activities]
+            'split_mode': self.split_mode or 'Uniform',
+            'activities': [a.to_dict() for a in self.activities],
+            'participants': p_list,
+            'payers': payer_list
         }
 
 class DirectSharedExpenseActivity(db.Model):

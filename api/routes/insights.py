@@ -1,11 +1,10 @@
 import os
 import json
 from datetime import datetime
-from flask import Blueprint, jsonify, request
-from models import Transaction, DirectSharedExpense, Budget, User
-from database import db
-from sqlalchemy import extract, or_
+from flask import Blueprint, jsonify
 from utils.auth import require_auth
+from utils.financials import get_budget_summary
+from models import Transaction, DirectSharedExpense, Budget, User
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -39,80 +38,11 @@ def generate_insights(user_id):
         return jsonify({"success": False, "error": "Insights are temporarily unavailable."}), 503
 
     now = datetime.utcnow()
-    month_year_str = now.strftime('%Y-%m')
     
-    # 1. Fetch personal transactions
-    personal_tx = Transaction.query.filter(
-        Transaction.user_id == user_id,
-        extract('month', Transaction.date) == now.month,
-        extract('year', Transaction.date) == now.year
-    ).all()
+    summary_data = get_budget_summary(user_id, now.month, now.year)
     
-    # 2. Fetch effective shared expenses (Accepted, Change_Pending)
-    shared_tx = DirectSharedExpense.query.filter(
-        or_(DirectSharedExpense.creator_id == user_id, DirectSharedExpense.other_user_id == user_id),
-        DirectSharedExpense.status.in_(['Accepted', 'Change_Pending'])
-    ).all()
-    
-    if len(personal_tx) == 0 and len(shared_tx) == 0:
+    if summary_data['total_spent'] == 0:
         return jsonify({"success": False, "error": "No spending data yet. Add a few expenses to unlock personalized AI insights."}), 400
-
-    # 3. Aggregate totals
-    total_spent = sum(t.amount for t in personal_tx)
-    for stx in shared_tx:
-        if stx.creator_id == user_id:
-            total_spent += stx.total_amount * (stx.creator_percentage / 100.0)
-        else:
-            total_spent += stx.total_amount * (stx.other_percentage / 100.0)
-            
-    budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year_str).all()
-    overall_budget = sum(b.amount for b in budgets if b.category == 'Overall')
-        
-    remaining = overall_budget - total_spent
-    percentage_used = round((total_spent / overall_budget * 100) if overall_budget > 0 else 0, 1)
-
-    # 4. Aggregate categories
-    cat_spent = {}
-    for t in personal_tx:
-        cat_spent[t.category] = cat_spent.get(t.category, 0) + t.amount
-    for stx in shared_tx:
-        cat = stx.category or 'Other'
-        if stx.creator_id == user_id:
-            cat_spent[cat] = cat_spent.get(cat, 0) + stx.total_amount * (stx.creator_percentage / 100.0)
-        else:
-            cat_spent[cat] = cat_spent.get(cat, 0) + stx.total_amount * (stx.other_percentage / 100.0)
-
-    categories_data = []
-    for b in budgets:
-        if b.category != 'Overall':
-            spent = cat_spent.get(b.category, 0)
-            categories_data.append({
-                "name": b.category,
-                "budget": b.amount,
-                "spent": round(spent, 2),
-                "remaining": round(b.amount - spent, 2),
-                "percentage_used": round((spent / b.amount * 100) if b.amount > 0 else 0, 1)
-            })
-            
-    # Include unbudgeted categories that have spending
-    budgeted_cats = set(b.category for b in budgets if b.category != 'Overall')
-    for cat, spent in cat_spent.items():
-        if cat not in budgeted_cats and spent > 0:
-            categories_data.append({
-                "name": cat,
-                "budget": 0,
-                "spent": round(spent, 2),
-                "remaining": -round(spent, 2),
-                "percentage_used": 100
-            })
-            
-    summary_data = {
-        "total_budget": overall_budget,
-        "total_spent": round(total_spent, 2),
-        "remaining": round(remaining, 2),
-        "percentage_used": percentage_used,
-        "categories": categories_data
-    }
 
     prompt = f"""
 You are a personalized AI financial advisor inside the CampusSpend app.
@@ -143,3 +73,63 @@ FINANCIAL DATA:
     except Exception as e:
         print("Gemini API Error:", str(e))
         return jsonify({"success": False, "error": "Insights are temporarily unavailable. Please try again later."}), 503
+
+@insights_bp.route('/charts', methods=['GET'])
+@require_auth
+def get_charts(user_id):
+    now = datetime.utcnow()
+    month = now.month
+    year = now.year
+    
+    # We will just fetch all transactions for this month
+    personal_tx = Transaction.query.filter(
+        Transaction.user_id == user_id,
+        extract('month', Transaction.date) == month,
+        extract('year', Transaction.date) == year
+    ).all()
+    
+    from models import DirectSharedExpenseParticipant
+    participants = DirectSharedExpenseParticipant.query.filter(
+        DirectSharedExpenseParticipant.user_id == user_id,
+        DirectSharedExpenseParticipant.status == 'Accepted'
+    ).all()
+    
+    # Group by week (1 to 4)
+    weeks = [0, 0, 0, 0, 0] # indices 0-4 (week 1 to 5)
+    
+    for t in personal_tx:
+        day = t.date.day
+        week_idx = min((day - 1) // 7, 4)
+        weeks[week_idx] += t.amount
+        
+    for p in participants:
+        ex = p.shared_expense
+        if ex.date.month == month and ex.date.year == year:
+            day = ex.date.day
+            week_idx = min((day - 1) // 7, 4)
+            weeks[week_idx] += p.amount_owed
+            
+    chart_data = [
+        {"name": "Week 1", "amount": round(weeks[0], 2)},
+        {"name": "Week 2", "amount": round(weeks[1], 2)},
+        {"name": "Week 3", "amount": round(weeks[2], 2)},
+        {"name": "Week 4", "amount": round(weeks[3] + weeks[4], 2)}
+    ]
+    
+    from utils.financials import get_budget_summary
+from models import Transaction, DirectSharedExpense, Budget, User
+    summary = get_budget_summary(user_id, month, year)
+    
+    pie_data = []
+    for c in summary['categories']:
+        if c['spent'] > 0:
+            pie_data.append({"name": c['name'], "value": c['spent']})
+            
+    return jsonify({
+        "success": True, 
+        "data": {
+            "weekly": chart_data,
+            "categories": pie_data
+        }
+    }), 200
+

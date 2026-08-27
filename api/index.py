@@ -49,6 +49,7 @@ try:
             try:
                 db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN pending_changes TEXT'))
                 db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN change_requested_by INTEGER'))
+                db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN split_mode VARCHAR(50) DEFAULT ''Uniform'''))
                 db.session.commit()
             except Exception:
                 db.session.rollback()
@@ -81,3 +82,4 @@ def add_header(response):
 # For local development
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+

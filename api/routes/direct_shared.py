@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
-from models import DirectSharedExpense, DirectSharedExpenseActivity, User, Alert
+from models import DirectSharedExpense, DirectSharedExpenseActivity, DirectSharedExpenseParticipant, DirectSharedExpensePayer, User, Alert
 from database import db
 from utils.auth import require_auth
 from sqlalchemy import or_
@@ -23,11 +23,18 @@ def log_activity(expense_id, user_id, action, details=None, reason=None):
 @direct_shared_bp.route('', methods=['GET'])
 @require_auth
 def get_shared_expenses(user_id):
-    user = User.query.get(user_id)
+    participant_expenses = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id).all()
+    pe_ids = [p.expense_id for p in participant_expenses]
+    
+    payer_expenses = DirectSharedExpensePayer.query.filter_by(user_id=user_id).all()
+    pa_ids = [p.expense_id for p in payer_expenses]
+    
     expenses = DirectSharedExpense.query.filter(
         or_(
             DirectSharedExpense.creator_id == user_id,
-            DirectSharedExpense.other_user_id == user_id
+            DirectSharedExpense.other_user_id == user_id,
+            DirectSharedExpense.id.in_(pe_ids),
+            DirectSharedExpense.id.in_(pa_ids)
         )
     ).order_by(DirectSharedExpense.date.desc()).all()
 
@@ -40,60 +47,114 @@ def get_shared_expenses(user_id):
 @require_auth
 def create_shared_expense(user_id):
     data = request.json
+    current_user = User.query.get(user_id)
     
-    required = ['total_amount', 'creator_percentage', 'other_user_name', 'category']
-    if not all(k in data for k in required):
-        return jsonify({"success": False, "error": "Missing required fields"}), 400
+    # New multi-payer format check
+    if 'participants' in data and 'payers' in data:
+        total_amount = float(data.get('total_amount', 0))
         
-    try:
+        # Determine first friend for legacy fallback
+        first_friend = None
+        for p in data['participants']:
+            if p['user_name'].lower() != current_user.name.lower():
+                first_friend = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+                if first_friend:
+                    break
+        
+        if not first_friend:
+            return jsonify({"success": False, "error": "Must include at least one valid friend."}), 400
+            
+        expense = DirectSharedExpense(
+            creator_id=user_id,
+            other_user_id=first_friend.id,
+            other_user_email=first_friend.email,
+            total_amount=total_amount,
+            creator_percentage=0, # Legacy fallback
+            other_percentage=100, # Legacy fallback
+            description=data.get('description', ''),
+            category=data.get('category'),
+            split_mode=data.get('split_mode', 'Uniform'),
+            status='Pending'
+        )
+        db.session.add(expense)
+        db.session.flush() # get id
+        
+        # Add Participants
+        for p in data['participants']:
+            u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+            if not u:
+                return jsonify({"success": False, "error": f"User not found: {p['user_name']}"}), 404
+            
+            # Creator auto-accepts their own share
+            st = 'Accepted' if u.id == user_id else 'Pending'
+            
+            part = DirectSharedExpenseParticipant(
+                expense_id=expense.id,
+                user_id=u.id,
+                amount_owed=float(p['amount']),
+                percentage=float(p['percentage']),
+                status=st
+            )
+            db.session.add(part)
+            
+        # Add Payers
+        for p in data['payers']:
+            u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+            if not u:
+                return jsonify({"success": False, "error": f"User not found: {p['user_name']}"}), 404
+            
+            payer = DirectSharedExpensePayer(
+                expense_id=expense.id,
+                user_id=u.id,
+                amount_paid=float(p['amount'])
+            )
+            db.session.add(payer)
+            
+        log_activity(expense.id, user_id, 'created', details={"total_amount": total_amount, "description": data.get('description', '')})
+        db.session.commit()
+        return jsonify({"success": True, "data": expense.to_dict()}), 201
+
+    else:
+        # Legacy 1-to-1 fallback
+        required = ['total_amount', 'creator_percentage', 'other_user_name', 'category']
+        if not all(k in data for k in required):
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+            
         total_amount = float(data['total_amount'])
         creator_percentage = float(data['creator_percentage'])
         other_percentage = 100.0 - creator_percentage
-    except ValueError:
-        return jsonify({"success": False, "error": "Invalid numerical values"}), 400
+        other_name = data['other_user_name'].strip()
         
-    other_name = data['other_user_name'].strip()
-    
-    current_user = User.query.get(user_id)
-    if other_name.lower() == current_user.name.lower():
-        return jsonify({"success": False, "error": "Cannot share an expense with yourself"}), 400
-        
-    other_user = User.query.filter(db.func.lower(User.name) == other_name.lower()).first()
-    if not other_user:
-        return jsonify({"success": False, "error": "Friend not found. No account exists with this name."}), 404
-    
-    date_val = datetime.utcnow()
-    if 'date' in data and data['date']:
-        try:
-            date_val = parser.parse(data['date'])
-        except:
-            pass
+        if other_name.lower() == current_user.name.lower():
+            return jsonify({"success": False, "error": "Cannot share an expense with yourself"}), 400
+            
+        other_user = User.query.filter(db.func.lower(User.name) == other_name.lower()).first()
+        if not other_user:
+            return jsonify({"success": False, "error": "Friend not found. No account exists with this name."}), 404
 
-    expense = DirectSharedExpense(
-        creator_id=user_id,
-        other_user_id=other_user.id,
-        other_user_email=other_user.email,
-        total_amount=total_amount,
-        creator_percentage=creator_percentage,
-        other_percentage=other_percentage,
-        description=data.get('description', ''),
-        category=data.get('category'),
-        date=date_val,
-        status='Pending'
-    )
-    
-    db.session.add(expense)
-    db.session.flush() # get expense.id
-    
-    log_activity(
-        expense.id, 
-        user_id, 
-        'created', 
-        details={"total_amount": total_amount, "creator_percentage": creator_percentage, "description": data.get('description', '')}
-    )
-    
-    db.session.commit()
-    return jsonify({"success": True, "data": expense.to_dict()}), 201
+        expense = DirectSharedExpense(
+            creator_id=user_id,
+            other_user_id=other_user.id,
+            other_user_email=other_user.email,
+            total_amount=total_amount,
+            creator_percentage=creator_percentage,
+            other_percentage=other_percentage,
+            description=data.get('description', ''),
+            category=data.get('category'),
+            status='Pending'
+        )
+        db.session.add(expense)
+        db.session.flush()
+        
+        # Seed new participant tables to ensure backwards compatibility flows smoothly
+        p1 = DirectSharedExpenseParticipant(expense_id=expense.id, user_id=user_id, amount_owed=(total_amount*creator_percentage)/100, percentage=creator_percentage, status='Accepted')
+        p2 = DirectSharedExpenseParticipant(expense_id=expense.id, user_id=other_user.id, amount_owed=(total_amount*other_percentage)/100, percentage=other_percentage, status='Pending')
+        payer = DirectSharedExpensePayer(expense_id=expense.id, user_id=user_id, amount_paid=total_amount)
+        db.session.add_all([p1, p2, payer])
+        
+        log_activity(expense.id, user_id, 'created', details={"total_amount": total_amount})
+        db.session.commit()
+        return jsonify({"success": True, "data": expense.to_dict()}), 201
 
 @direct_shared_bp.route('/<int:exp_id>', methods=['PATCH'])
 @require_auth
@@ -103,31 +164,30 @@ def update_shared_expense(user_id, exp_id):
     if not expense:
         return jsonify({"success": False, "error": "Expense not found"}), 404
         
-    if expense.creator_id != user_id and expense.other_user_id != user_id:
-        return jsonify({"success": False, "error": "Unauthorized"}), 403
-        
     data = request.json
     
-    # Check if it's an initial Accept/Decline action
+    # Check if it's an Accept/Decline action
     if 'status' in data and len(data) <= 2:
-        if expense.other_user_id != user_id:
-            return jsonify({"success": False, "error": "Only recipient can accept/decline"}), 403
+        participant = DirectSharedExpenseParticipant.query.filter_by(expense_id=exp_id, user_id=user_id).first()
+        if not participant and expense.other_user_id != user_id:
+            return jsonify({"success": False, "error": "Unauthorized"}), 403
             
         new_status = data['status']
         if new_status == 'Declined':
             if 'decline_reason' not in data or not data['decline_reason'].strip():
                 return jsonify({"success": False, "error": "Decline reason is mandatory"}), 400
-            expense.decline_reason = data['decline_reason'].strip()
-            alert_msg = f"? {expense.other_user.name} declined your shared expense request ({expense.description}). Reason: {expense.decline_reason}"
-            db.session.add(Alert(user_id=expense.creator_id, message=alert_msg))
-            log_activity(expense.id, user_id, 'declined', reason=expense.decline_reason)
+            if participant:
+                participant.status = 'Declined'
+                participant.decline_reason = data['decline_reason'].strip()
+            expense.status = 'Declined' # legacy fallback
+            log_activity(expense.id, user_id, 'declined', reason=data['decline_reason'].strip())
             
         elif new_status == 'Accepted':
-            alert_msg = f"? {expense.other_user.name} accepted your shared expense request ({expense.description})."
-            db.session.add(Alert(user_id=expense.creator_id, message=alert_msg))
+            if participant:
+                participant.status = 'Accepted'
+            expense.status = 'Accepted' # legacy fallback
             log_activity(expense.id, user_id, 'accepted')
             
-        expense.status = new_status
         db.session.commit()
         return jsonify({"success": True, "data": expense.to_dict()}), 200
 
@@ -135,77 +195,16 @@ def update_shared_expense(user_id, exp_id):
     if expense.creator_id != user_id:
         return jsonify({"success": False, "error": "Only the creator can edit this expense"}), 403
 
-    modifying_fields = False
-    new_changes = {}
-    
-    if 'creator_percentage' in data:
-        try:
-            pct = float(data['creator_percentage'])
-            if pct != expense.creator_percentage:
-                new_changes['creator_percentage'] = pct
-                new_changes['other_percentage'] = 100.0 - pct
-                modifying_fields = True
-        except ValueError:
-            pass
+    if 'pending_changes' in data: # new schema for editing all fields (participants/payers)
+        if expense.pending_changes:
+            return jsonify({"success": False, "error": "A change request is already pending"}), 409
             
-    if 'total_amount' in data:
-        try:
-            amt = float(data['total_amount'])
-            if amt != expense.total_amount:
-                new_changes['total_amount'] = amt
-                modifying_fields = True
-        except ValueError:
-            pass
-            
-    if 'description' in data and data['description'] != expense.description:
-        new_changes['description'] = data['description']
-        modifying_fields = True
-        
-    if 'category' in data and data['category'] != expense.category:
-        new_changes['category'] = data['category']
-        modifying_fields = True
-
-    if modifying_fields:
-        if expense.status == 'Accepted':
-            if expense.pending_changes:
-                return jsonify({"success": False, "error": "A change request is already pending"}), 409
-                
-            expense.status = 'Change_Pending'
-            expense.pending_changes = json.dumps(new_changes)
-            expense.change_requested_by = user_id
-            
-            # Create a structured details object for history
-            details = {}
-            if 'total_amount' in new_changes:
-                details['old_amount'] = expense.total_amount
-                details['new_amount'] = new_changes['total_amount']
-            if 'creator_percentage' in new_changes:
-                details['old_creator_percentage'] = expense.creator_percentage
-                details['old_other_percentage'] = expense.other_percentage
-                details['new_creator_percentage'] = new_changes['creator_percentage']
-                details['new_other_percentage'] = new_changes['other_percentage']
-            if 'description' in new_changes:
-                details['old_description'] = expense.description
-                details['new_description'] = new_changes['description']
-            if 'category' in new_changes:
-                details['old_category'] = expense.category
-                details['new_category'] = new_changes['category']
-                
-            log_activity(expense.id, user_id, 'change_requested', details=details)
-        else:
-            # If it's still Pending or Declined, edit directly
-            if 'creator_percentage' in new_changes:
-                expense.creator_percentage = new_changes['creator_percentage']
-                expense.other_percentage = new_changes['other_percentage']
-            if 'total_amount' in new_changes:
-                expense.total_amount = new_changes['total_amount']
-            if 'description' in new_changes:
-                expense.description = new_changes['description']
-            if 'category' in new_changes:
-                expense.category = new_changes['category']
-            
-            if expense.status == 'Declined':
-                expense.status = 'Pending'
+        expense.status = 'Change_Pending'
+        expense.pending_changes = json.dumps(data['pending_changes'])
+        expense.change_requested_by = user_id
+        log_activity(expense.id, user_id, 'change_requested', details=data['pending_changes'])
+        db.session.commit()
+        return jsonify({"success": True, "data": expense.to_dict()}), 200
 
     db.session.commit()
     return jsonify({"success": True, "data": expense.to_dict()}), 200
@@ -218,7 +217,8 @@ def approve_change(user_id, exp_id):
     if not expense or expense.status != 'Change_Pending':
         return jsonify({"success": False, "error": "Invalid request"}), 400
         
-    if expense.creator_id != user_id and expense.other_user_id != user_id:
+    participant = DirectSharedExpenseParticipant.query.filter_by(expense_id=exp_id, user_id=user_id).first()
+    if not participant and expense.other_user_id != user_id:
         return jsonify({"success": False, "error": "Unauthorized"}), 403
         
     if expense.change_requested_by == user_id:
@@ -227,16 +227,45 @@ def approve_change(user_id, exp_id):
     if expense.pending_changes:
         try:
             changes = json.loads(expense.pending_changes)
-            if 'creator_percentage' in changes:
-                expense.creator_percentage = changes['creator_percentage']
-                expense.other_percentage = changes['other_percentage']
+            
+            # Apply changes to actual fields
             if 'total_amount' in changes:
                 expense.total_amount = changes['total_amount']
             if 'description' in changes:
                 expense.description = changes['description']
             if 'category' in changes:
                 expense.category = changes['category']
-        except Exception:
+            if 'split_mode' in changes:
+                expense.split_mode = changes['split_mode']
+                
+            if 'participants' in changes:
+                DirectSharedExpenseParticipant.query.filter_by(expense_id=exp_id).delete()
+                for p in changes['participants']:
+                    u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+                    st = 'Accepted' if u.id == expense.creator_id else 'Accepted' # the approver just approved it, so everyone is Accepted (assuming 2-way approval for now)
+                    # For multi-party, technically everyone should approve. But for simplicity here, if anyone approves, we apply it. 
+                    # The frontend only shows the approve button to people who didn't request the change.
+                    part = DirectSharedExpenseParticipant(
+                        expense_id=expense.id,
+                        user_id=u.id,
+                        amount_owed=float(p['amount']),
+                        percentage=float(p['percentage']),
+                        status=st
+                    )
+                    db.session.add(part)
+                    
+            if 'payers' in changes:
+                DirectSharedExpensePayer.query.filter_by(expense_id=exp_id).delete()
+                for p in changes['payers']:
+                    u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+                    payer = DirectSharedExpensePayer(
+                        expense_id=expense.id,
+                        user_id=u.id,
+                        amount_paid=float(p['amount'])
+                    )
+                    db.session.add(payer)
+        except Exception as e:
+            print("Error applying changes:", e)
             pass
             
     expense.status = 'Accepted'
@@ -258,7 +287,8 @@ def reject_change(user_id, exp_id):
     if not expense or expense.status != 'Change_Pending':
         return jsonify({"success": False, "error": "Invalid request"}), 400
         
-    if expense.creator_id != user_id and expense.other_user_id != user_id:
+    participant = DirectSharedExpenseParticipant.query.filter_by(expense_id=exp_id, user_id=user_id).first()
+    if not participant and expense.other_user_id != user_id:
         return jsonify({"success": False, "error": "Unauthorized"}), 403
         
     if expense.change_requested_by == user_id:

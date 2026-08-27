@@ -1,113 +1,92 @@
-import React, { useState } from 'react';
-import { GlassCard, GlassButton, GlassInput } from '../components/ui';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/api';
-import { LogOut } from 'lucide-react';
+import { User, LogOut, Moon, Sun, Monitor } from 'lucide-react';
 
 export default function Settings() {
-  const { user, logout, setUser } = useAuth();
-  const [formData, setFormData] = useState({
-    name: user.name,
-    student_type: user.student_type,
-    password: ''
-  });
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const { user, logout } = useAuth();
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'System');
 
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage('');
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
     
-    try {
-      const dataToSubmit = { name: formData.name, student_type: formData.student_type };
-      if (formData.password) {
-        if (formData.password.length < 6) {
-          setMessage("Password must be at least 6 characters");
-          setLoading(false);
-          return;
-        }
-        dataToSubmit.password = formData.password;
-      }
-      
-      const res = await api.patch('/auth/me', dataToSubmit);
-      if (res.data.success) {
-        setUser(res.data.data);
-        setMessage("Profile updated successfully!");
-        setFormData({ ...formData, password: '' });
-      }
-    } catch (err) {
-      setMessage("Error updating profile");
+    if (newTheme === 'Dark' || (newTheme === 'System' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
-    setLoading(false);
   };
 
   return (
-    <div className="flex flex-col gap-8 pb-12 animate-in fade-in duration-500">
-      <header className="flex justify-between items-center">
+    <div className="space-y-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600 dark:from-white dark:to-slate-300">
+          Settings
+        </h1>
+        <p className="text-slate-600 dark:text-slate-400 mt-2">Manage your account and preferences.</p>
+      </div>
+
+      <div className="glass p-8 rounded-2xl space-y-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">Settings</h1>
-          <p className="text-slate-600 mt-1">Manage your account</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+            <User className="text-primary-500" size={24} />
+            Profile Information
+          </h2>
+          <div className="space-y-4 ml-8">
+            <div>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Name</p>
+              <p className="text-lg font-semibold text-slate-800 dark:text-slate-200">{user.name}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Email Address</p>
+              <p className="text-lg text-slate-800 dark:text-slate-200">{user.email}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Student Type</p>
+              <p className="text-lg text-slate-800 dark:text-slate-200">{user.student_type}</p>
+            </div>
+          </div>
         </div>
-        <GlassButton variant="danger" onClick={logout}>
-          <LogOut size={20} /> Logout
-        </GlassButton>
-      </header>
+        
+        <div className="h-px bg-slate-200 dark:bg-slate-700/50"></div>
 
-      <div className="max-w-2xl">
-        <GlassCard>
-          <h2 className="text-xl font-bold text-slate-800 mb-6">Profile Information</h2>
-          
-          {message && (
-            <div className={`mb-6 p-4 rounded-xl ${message.includes('Error') ? 'bg-red-500/10 text-red-600' : 'bg-mint-500/10 text-mint-700'}`}>
-              {message}
-            </div>
-          )}
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">
+            Appearance
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-4 ml-8">
+            <button 
+              onClick={() => handleThemeChange('Light')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${theme === 'Light' ? 'bg-primary-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              <Sun size={18} /> Light
+            </button>
+            <button 
+              onClick={() => handleThemeChange('Dark')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${theme === 'Dark' ? 'bg-primary-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              <Moon size={18} /> Dark
+            </button>
+            <button 
+              onClick={() => handleThemeChange('System')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${theme === 'System' ? 'bg-primary-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              <Monitor size={18} /> System
+            </button>
+          </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold text-slate-700">Email Address</label>
-              <GlassInput type="email" value={user.email} disabled className="opacity-70 cursor-not-allowed" />
-              <p className="text-xs text-slate-500">Email cannot be changed.</p>
-            </div>
+        <div className="h-px bg-slate-200 dark:bg-slate-700/50"></div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold text-slate-700">Full Name</label>
-              <GlassInput name="name" value={formData.name} onChange={handleChange} required />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold text-slate-700">Student Type</label>
-              <select 
-                name="student_type" 
-                value={formData.student_type} 
-                onChange={handleChange} 
-                className="w-full px-4 py-3 rounded-xl glass-input text-slate-800"
-              >
-                <option value="Hosteller">Hosteller</option>
-                <option value="Day Scholar">Day Scholar</option>
-              </select>
-              <p className="text-xs text-slate-500">Warning: Changing this will update your available expense categories.</p>
-            </div>
-
-            <div className="flex flex-col gap-2 pt-4 border-t border-slate-200/50">
-              <label className="text-sm font-bold text-slate-700">Change Password</label>
-              <GlassInput 
-                type="password" 
-                name="password" 
-                value={formData.password} 
-                onChange={handleChange} 
-                placeholder="Leave blank to keep current password"
-              />
-            </div>
-
-            <GlassButton type="submit" className="mt-4 self-start px-8" disabled={loading}>
-              {loading ? 'Saving...' : 'Save Changes'}
-            </GlassButton>
-          </form>
-        </GlassCard>
+        <div>
+          <button 
+            onClick={logout}
+            className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 font-bold rounded-xl transition-colors"
+          >
+            <LogOut size={20} />
+            Sign Out
+          </button>
+        </div>
       </div>
     </div>
   );
