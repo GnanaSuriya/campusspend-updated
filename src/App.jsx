@@ -21,7 +21,7 @@ function ProtectedRoute({ children }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 p-8 ml-64 max-h-screen overflow-y-auto">
+      <main className="flex-1 p-4 md:p-8 md:ml-64 max-h-screen overflow-y-auto pb-24 md:pb-8">
         <div className="max-w-5xl mx-auto">
           {children}
         </div>

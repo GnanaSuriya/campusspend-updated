@@ -12,9 +12,12 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
   const [category, setCategory] = useState(categories[0]);
   const [splitMode, setSplitMode] = useState('Uniform'); // Uniform, Specific Value, Ratio
   
-  const [participants, setParticipants] = useState([{ name: user.name, amount: 0, percentage: 0 }]);
-  const [payers, setPayers] = useState([{ name: user.name, amount: 0 }]);
+  const [participants, setParticipants] = useState([{ name: user.name, user_id: user.id, amount: 0, percentage: 0 }]);
+  const [payers, setPayers] = useState([{ name: user.name, user_id: user.id, amount: 0 }]);
   const [friendName, setFriendName] = useState('');
+  const [friendSearchStatus, setFriendSearchStatus] = useState(null);
+  const [foundFriend, setFoundFriend] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [payerName, setPayerName] = useState('');
 
   // Auto-recalculate amounts when total or mode changes
@@ -42,11 +45,44 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
     // For Specific Value, we do NOT auto-recalculate amounts to allow manual entry
   }, [amount, splitMode, participants.length]); // intentionally omitting participants from deps to avoid infinite loops
 
-  const addParticipant = () => {
-    if (friendName && !participants.find(p => p.name.toLowerCase() === friendName.toLowerCase())) {
-      setParticipants([...participants, { name: friendName, amount: 0, percentage: 0 }]);
-      setFriendName('');
+  const searchFriend = async () => {
+    if (!friendName.trim()) {
+      setFriendSearchStatus("Please enter a friend's name.");
+      setFoundFriend(null);
+      return;
     }
+    
+    setIsSearching(true);
+    setFriendSearchStatus(null);
+    try {
+      const res = await api.get(`/auth/search?q=${encodeURIComponent(friendName)}`);
+      if (res.data.success) {
+        setFoundFriend(res.data.data);
+        setFriendSearchStatus(`? User exists: ${res.data.data.name}`);
+      }
+    } catch (err) {
+      setFoundFriend(null);
+      setFriendSearchStatus("Friend not found. No CampusSpend account exists with this name.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const addParticipant = () => {
+    if (!foundFriend) {
+      if (friendName) searchFriend();
+      return;
+    }
+    
+    if (participants.find(p => p.user_id === foundFriend.id || p.name.toLowerCase() === foundFriend.name.toLowerCase())) {
+      setFriendSearchStatus("User is already a participant.");
+      return;
+    }
+    
+    setParticipants([...participants, { name: foundFriend.name, user_id: foundFriend.id, amount: 0, percentage: 0 }]);
+    setFriendName('');
+    setFoundFriend(null);
+    setFriendSearchStatus(null);
   };
 
   const removeParticipant = (idx) => {
@@ -107,10 +143,7 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
       percentage: splitMode === 'Ratio' ? p.percentage : parseFloat(((p.amount / expenseTotal) * 100).toFixed(2))
     }));
     
-    const payerData = payers.map(p => ({
-      user_name: p.name,
-      amount: p.amount
-    }));
+    const payerData = payers.map(p => ({ user_name: p.name, user_id: p.user_id, amount: p.amount }));
 
     onSubmit({
       description,

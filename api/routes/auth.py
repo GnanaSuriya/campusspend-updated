@@ -109,3 +109,15 @@ def reset_data(user_id):
     
     db.session.commit()
     return jsonify({"success": True, "data": None}), 200
+
+@auth_bp.route('/search', methods=['GET'])
+@require_auth
+def search_user(user_id):
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({"success": False, "error": "Query required"}), 400
+        
+    user = User.query.filter(User.name.ilike(q)).first()
+    if user:
+        return jsonify({"success": True, "data": {"id": user.id, "name": user.name}}), 200
+    return jsonify({"success": False, "error": "User not found"}), 404

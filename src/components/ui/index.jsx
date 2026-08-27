@@ -54,7 +54,7 @@ export function GlassModal({ isOpen, onClose, children, title }) {
         onClick={onClose}
       />
       <div className="relative w-full max-w-md animate-in fade-in zoom-in duration-200">
-        <GlassCard className="p-8">
+        <GlassCard className="p-6 md:p-8 max-h-[90vh] overflow-y-auto">
           {title && <h2 className="text-2xl font-extrabold text-slate-800 mb-6">{title}</h2>}
           {children}
         </GlassCard>
@@ -62,3 +62,4 @@ export function GlassModal({ isOpen, onClose, children, title }) {
     </div>
   );
 }
+

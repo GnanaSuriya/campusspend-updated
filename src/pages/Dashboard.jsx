@@ -46,8 +46,8 @@ export default function Dashboard() {
     <div className="flex flex-col gap-8 pb-12 animate-in fade-in duration-500">
       <header className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">Dashboard</h1>
-          <p className="text-slate-600 mt-1">Welcome back, {user?.name}</p>
+          <h1 className="text-3xl font-extrabold text-slate-800 dark:text-white">Dashboard</h1>
+          <p className="text-slate-600 dark:text-slate-300 mt-1">Welcome back, {user?.name}</p>
         </div>
         <button 
           onClick={handleReset}
@@ -82,29 +82,29 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <GlassCard className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-slate-500 font-medium">
+          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 font-medium">
             <TrendingDown size={18} />
             <span>Spent</span>
           </div>
-          <span className="text-4xl font-extrabold text-slate-800">₹{data.total_spent.toFixed(2)}</span>
+          <span className="text-4xl font-extrabold text-slate-800 dark:text-white">₹{data.total_spent.toFixed(2)}</span>
         </GlassCard>
 
         <GlassCard className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-slate-500 font-medium">
+          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 font-medium">
             <Target size={18} />
             <span>Budget</span>
           </div>
-          <span className="text-4xl font-extrabold text-slate-800">
+          <span className="text-4xl font-extrabold text-slate-800 dark:text-white">
             {data.budget > 0 ? `₹${data.budget.toFixed(2)}` : 'Not Set'}
           </span>
         </GlassCard>
 
         <GlassCard className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-slate-500 font-medium">
+          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 font-medium">
             <IndianRupee size={18} />
             <span>Remaining</span>
           </div>
-          <span className={`text-4xl font-extrabold ${data.remaining <= 0 && data.budget > 0 ? 'text-red-500' : 'text-slate-800'}`}>
+          <span className={`text-4xl font-extrabold ${data.remaining <= 0 && data.budget > 0 ? 'text-red-500' : 'text-slate-800 dark:text-white'}`}>
             ₹{data.remaining.toFixed(2)}
           </span>
         </GlassCard>
@@ -113,88 +113,80 @@ export default function Dashboard() {
       {data.budget > 0 && (
         <GlassCard className="flex flex-col gap-4">
           <div className="flex justify-between items-end">
-            <span className="font-bold text-slate-700">Budget Usage</span>
-            <span className="text-sm font-medium text-slate-500">{progress.toFixed(1)}%</span>
+            <span className="font-bold text-slate-700 dark:text-slate-200">Budget Usage</span>
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{progress.toFixed(1)}%</span>
           </div>
-          <div className="h-4 w-full bg-slate-200/50 rounded-full overflow-hidden">
+          <div className="h-4 w-full bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
             <div className={`h-full ${progressColor} transition-all duration-1000 ease-out`} style={{ width: `${progress}%` }}></div>
           </div>
         </GlassCard>
       )}
 
-      {data.category_budgets && data.category_budgets.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {data.category_budgets.map((cat, i) => {
-            const catSpent = data.category_breakdown.find(c => c.category === cat.category)?.amount || 0;
-            const catLeft = cat.amount - catSpent;
-            return (
-              <GlassCard key={i} className="flex flex-col gap-2">
-                <div className="flex justify-between items-center text-slate-800 font-bold border-b border-slate-200/50 pb-2 mb-1">
-                  <span>{cat.category}</span>
-                  <span>₹{cat.amount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Spent: ₹{catSpent.toFixed(2)}</span>
-                  <span className={`font-medium ${catLeft < 0 ? 'text-red-500' : 'text-slate-700'}`}>Left: ₹{catLeft.toFixed(2)}</span>
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
-      )}
+      
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <GlassCard>
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Spending by Category</h3>
-          {data.category_breakdown.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {data.category_breakdown.sort((a, b) => b.amount - a.amount).map(cat => (
-                <div key={cat.category} className="flex flex-col gap-2">
-                  <div className="flex justify-between text-sm font-medium">
-                    <span className="text-slate-700">{cat.category}</span>
-                    <span className="text-slate-900">₹{cat.amount.toFixed(2)}</span>
+        <GlassCard className="flex flex-col h-full">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Spending by Category</h3>
+          {data.category_budgets && data.category_budgets.length > 0 ? (
+            <div className="flex flex-col gap-5">
+              {data.category_budgets.sort((a, b) => b.spent - a.spent).map(cat => (
+                <div key={cat.name} className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center text-sm font-medium">
+                    <span className="text-slate-700 dark:text-slate-200 font-bold">{cat.name}</span>
+                    <span className="text-slate-900 dark:text-white">?{cat.spent.toFixed(2)}</span>
                   </div>
-                  <div className="h-2 w-full bg-slate-200/50 rounded-full overflow-hidden">
+                  {cat.budget > 0 ? (
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 -mt-1">
+                      <span>Budget: ?{cat.budget.toFixed(2)}</span>
+                      <span className={cat.remaining < 0 ? 'text-red-500 font-bold' : ''}>
+                        {cat.remaining < 0 ? `Exceeded by ?${Math.abs(cat.remaining).toFixed(2)}` : `?${cat.remaining.toFixed(2)} left`}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="h-2 w-full bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-primary-500" 
-                      style={{ width: `${(cat.amount / data.total_spent) * 100}%` }}
+                      className={`h-full ${cat.budget > 0 && cat.percentage_used > 100 ? 'bg-red-500' : 'bg-primary-500'}`} 
+                      style={{ width: `${Math.min(cat.percentage_used || ((cat.spent / data.total_spent) * 100) || 0, 100)}%` }}
                     ></div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-slate-500 text-center py-8">No expenses this month yet.</div>
+            <div className="text-slate-500 dark:text-slate-400 text-center py-8">No expenses this month yet.</div>
           )}
         </GlassCard>
 
         <GlassCard>
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Recent Transactions</h3>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Recent Transactions</h3>
           {data.recent_transactions.length > 0 ? (
             <div className="flex flex-col gap-4">
               {data.recent_transactions.map((tx, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-white/40 transition-colors">
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-800">{tx.category}</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{tx.category}</span>
                       {tx.is_shared && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-primary-100 text-primary-700">SHARED</span>
                       )}
                     </div>
-                    <span className="text-sm text-slate-500">{tx.description || tx.payment_method}</span>
+                    <span className="text-sm text-slate-500 dark:text-slate-400">{tx.description || tx.payment_method}</span>
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className="font-bold text-slate-800">₹{tx.amount.toFixed(2)}</span>
-                    <span className="text-xs text-slate-400">{new Date(tx.date).toLocaleDateString()}</span>
+                    <span className="font-bold text-slate-800 dark:text-white">₹{tx.amount.toFixed(2)}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">{new Date(tx.date).toLocaleDateString()}</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-slate-500 text-center py-8">No recent transactions.</div>
+            <div className="text-slate-500 dark:text-slate-400 text-center py-8">No recent transactions.</div>
           )}
         </GlassCard>
       </div>
     </div>
   );
 }
+
+
+

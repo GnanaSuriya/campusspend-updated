@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { GlassCard } from '../ui';
 import { CheckCircle2, Edit2, Trash2, XCircle, Clock, Users, ArrowRight } from 'lucide-react';
@@ -111,8 +111,8 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
                 <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">Change Requested</p>
                 {expense.change_requested_by !== currentUserId ? (
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => onApproveChange(expense.id)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"><CheckCircle2 size={14}/> Approve</button>
-                    <button onClick={() => onRejectChange(expense)} className="px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"><XCircle size={14}/> Decline</button>
+                    <button onClick={() => onApproveChange(expense.id)} className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"><CheckCircle2 size={14}/> Approve</button>
+                    <button onClick={() => onRejectChange(expense)} className="px-4 py-2.5 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"><XCircle size={14}/> Decline</button>
                   </div>
                 ) : (
                   <p className="text-xs text-blue-600 dark:text-blue-300">Waiting for others to review your changes.</p>
@@ -125,10 +125,10 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
         {/* Accept/Decline Buttons for Participants */}
         {myPart && myPart.status === 'Pending' && expense.status !== 'Change_Pending' && (
           <div className="mt-4 flex gap-3">
-            <button onClick={() => onAccept(expense.id)} className="flex-1 py-2 bg-mint-500 hover:bg-mint-600 text-white text-sm font-bold rounded-xl transition flex items-center justify-center gap-2">
+            <button onClick={() => onAccept(expense.id)} className="flex-1 py-3 bg-mint-500 hover:bg-mint-600 text-white text-sm font-bold rounded-xl transition flex items-center justify-center gap-2">
               <CheckCircle2 size={18} /> Accept Share
             </button>
-            <button onClick={() => onReject(expense)} className="flex-1 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 text-sm font-bold rounded-xl transition flex items-center justify-center gap-2">
+            <button onClick={() => onReject(expense)} className="flex-1 py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 text-sm font-bold rounded-xl transition flex items-center justify-center gap-2">
               <XCircle size={18} /> Decline
             </button>
           </div>
@@ -137,10 +137,10 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
         {/* Action Buttons for Creator */}
         {isCreator && (
           <div className="mt-4 flex justify-end gap-2 border-t border-slate-100 dark:border-slate-800/50 pt-4 relative z-10">
-            <button onClick={() => onEdit(expense)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-all" title="Edit Expense">
+            <button onClick={() => onEdit(expense)} className="p-3 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-all" title="Edit Expense">
               <Edit2 size={18} />
             </button>
-            <button onClick={triggerOptimisticDelete} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Delete">
+            <button onClick={triggerOptimisticDelete} className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Delete">
               <Trash2 size={18} />
             </button>
           </div>
@@ -149,3 +149,4 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
     </motion.div>
   );
 }
+

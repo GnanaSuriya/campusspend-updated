@@ -56,8 +56,9 @@ def create_shared_expense(user_id):
         # Determine first friend for legacy fallback
         first_friend = None
         for p in data['participants']:
-            if p['user_name'].lower() != current_user.name.lower():
-                first_friend = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
+            uid = p.get('user_id')
+            if uid and uid != user_id:
+                first_friend = User.query.get(uid)
                 if first_friend:
                     break
         
@@ -77,20 +78,31 @@ def create_shared_expense(user_id):
             status='Pending'
         )
         db.session.add(expense)
+        # Pre-validate all participants and payers before flushing the expense
+        for p in data['participants']:
+            uid = p.get('user_id')
+            if not uid:
+                return jsonify({"success": False, "error": "Friend not found", "message": f"No CampusSpend account exists with this name: {p.get('user_name')}"}), 400
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "Friend not found", "message": f"No CampusSpend account exists with this name: {p.get('user_name')}"}), 400
+                
+        for p in data['payers']:
+            uid = p.get('user_id')
+            if not uid:
+                return jsonify({"success": False, "error": "Friend not found", "message": f"No CampusSpend account exists with this name: {p.get('user_name')}"}), 400
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "Friend not found", "message": f"No CampusSpend account exists with this name: {p.get('user_name')}"}), 400
+                
         db.session.flush() # get id
         
         # Add Participants
         for p in data['participants']:
-            u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
-            if not u:
-                return jsonify({"success": False, "error": f"User not found: {p['user_name']}"}), 404
-            
-            # Creator auto-accepts their own share
-            st = 'Accepted' if u.id == user_id else 'Pending'
-            
+            st = 'Accepted' if p['user_id'] == user_id else 'Pending'
             part = DirectSharedExpenseParticipant(
                 expense_id=expense.id,
-                user_id=u.id,
+                user_id=p['user_id'],
                 amount_owed=float(p['amount']),
                 percentage=float(p['percentage']),
                 status=st
@@ -99,13 +111,9 @@ def create_shared_expense(user_id):
             
         # Add Payers
         for p in data['payers']:
-            u = User.query.filter(db.func.lower(User.name) == p['user_name'].strip().lower()).first()
-            if not u:
-                return jsonify({"success": False, "error": f"User not found: {p['user_name']}"}), 404
-            
             payer = DirectSharedExpensePayer(
                 expense_id=expense.id,
-                user_id=u.id,
+                user_id=p['user_id'],
                 amount_paid=float(p['amount'])
             )
             db.session.add(payer)
