@@ -60,12 +60,9 @@ def get_dashboard(user_id):
     
     summary = get_budget_summary(user_id, now.month, now.year)
     
-    # Map summary categories to legacy format
-    cat_budgets = []
+    cat_budgets = summary["categories"]
     cat_breakdown = []
     for c in summary["categories"]:
-        if c["budget"] > 0:
-            cat_budgets.append({"category": c["name"], "amount": c["budget"]})
         if c["spent"] > 0:
             cat_breakdown.append({"category": c["name"], "amount": c["spent"]})
             
@@ -102,3 +99,4 @@ def get_dashboard(user_id):
             "pending_requests_count": pending_count
         }
     }), 200
+

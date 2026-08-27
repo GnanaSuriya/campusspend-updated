@@ -147,9 +147,18 @@ def search_user(user_id):
     if not q:
         return jsonify({"success": False, "error": "Query required"}), 400
         
-    user = User.query.filter(User.name.ilike(q)).first()
+    from sqlalchemy import or_, func
+    # Match exactly (case-insensitive) on either name or email
+    user = User.query.filter(
+        or_(
+            func.trim(func.lower(User.name)) == func.lower(q),
+            func.trim(func.lower(User.email)) == func.lower(q)
+        )
+    ).first()
     if user:
         return jsonify({"success": True, "data": {"id": user.id, "name": user.name}}), 200
     return jsonify({"success": False, "error": "User not found"}), 404
+
+
 
 
