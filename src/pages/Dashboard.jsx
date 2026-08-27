@@ -42,7 +42,7 @@ export default function Dashboard() {
       await fetchDashboard();
     } catch (err) {
       console.error("Failed to reset data:", err);
-      alert("Could not reset your data. Please try again.");
+      alert(err.response?.data?.error || err.response?.data?.message || err.message || "Could not reset your data. Please try again.");
     } finally {
       setIsResetting(false);
     }
@@ -229,6 +229,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 

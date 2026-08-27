@@ -151,3 +151,5 @@ def search_user(user_id):
     if user:
         return jsonify({"success": True, "data": {"id": user.id, "name": user.name}}), 200
     return jsonify({"success": False, "error": "User not found"}), 404
+
+

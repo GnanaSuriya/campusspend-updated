@@ -135,10 +135,11 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
 
   const updateParticipant = (idx, field, val) => {
     const newP = [...participants];
-    newP[idx][field] = parseFloat(val) || 0;
+    newP[idx][field] = val; // Store exact input to allow typing decimals
     
     if (splitMode === 'Ratio' && field === 'percentage') {
-      newP[idx].amount = parseFloat(((newP[idx].percentage / 100) * (parseFloat(amount) || 0)).toFixed(2));
+      const parsedPct = parseFloat(val) || 0;
+      newP[idx].amount = parseFloat(((parsedPct / 100) * (parseFloat(amount) || 0)).toFixed(2));
     }
     
     setParticipants(newP);
@@ -146,13 +147,13 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
 
   const updatePayer = (idx, val) => {
     const newP = [...payers];
-    newP[idx].amount = parseFloat(val) || 0;
+    newP[idx].amount = val;
     setPayers(newP);
   };
 
-  const totalAllocated = participants.reduce((sum, p) => sum + p.amount, 0);
-  const totalPercentage = participants.reduce((sum, p) => sum + (p.percentage || 0), 0);
-  const totalPaid = payers.reduce((sum, p) => sum + p.amount, 0);
+  const totalAllocated = participants.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const totalPercentage = participants.reduce((sum, p) => sum + (parseFloat(p.percentage) || 0), 0);
+  const totalPaid = payers.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const expenseTotal = parseFloat(amount) || 0;
 
   const handleSubmit = (e) => {
@@ -224,10 +225,41 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
               {idx > 0 && <button type="button" onClick={() => setPayers(payers.filter((_, i) => i !== idx))}><X size={18} className="text-red-500" /></button>}
             </div>
           ))}
-          <div className="flex gap-2 mt-2">
-            <GlassInput value={payerName} onChange={(e) => setPayerName(e.target.value)} placeholder="Friend's Name" className="flex-1" />
-            <GlassButton type="button" onClick={addPayer} className="px-4 py-2">Add Payer</GlassButton>
-          </div>
+          <div className="flex flex-col gap-2 mt-2">
+              <div className="flex gap-2">
+                <GlassInput 
+                  value={payerName} 
+                  onChange={(e) => {
+                    setPayerName(e.target.value);
+                    setFoundPayer(null);
+                    setPayerSearchStatus(null);
+                  }} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (foundPayer) addPayer();
+                      else searchPayer();
+                    }
+                  }}
+                  placeholder="Friend's Name (e.g. Rahul)" 
+                  className="flex-1" 
+                />
+                {!foundPayer ? (
+                  <GlassButton type="button" onClick={searchPayer} disabled={isPayerSearching} className="px-4 py-2 shrink-0">
+                    {isPayerSearching ? 'Searching...' : 'Check User'}
+                  </GlassButton>
+                ) : (
+                  <GlassButton type="button" onClick={addPayer} className="px-4 py-2 shrink-0 bg-mint-500 hover:bg-mint-600 text-white">
+                    Add as Payer
+                  </GlassButton>
+                )}
+              </div>
+              {payerSearchStatus && (
+                <div className={`text-sm font-medium px-2 ${foundPayer ? 'text-mint-600 dark:text-mint-400' : 'text-red-500'}`}>
+                  {payerSearchStatus}
+                </div>
+              )}
+            </div>
           <div className={`text-sm mt-2 font-medium ${Math.abs(totalPaid - expenseTotal) < 0.01 ? 'text-mint-500' : 'text-amber-500'}`}>
             Total Paid: ?{totalPaid.toFixed(2)} / ?{expenseTotal.toFixed(2)}
           </div>
@@ -264,10 +296,41 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
             ))}
           </div>
 
-          <div className="flex gap-2 mt-4">
-            <GlassInput value={friendName} onChange={(e) => setFriendName(e.target.value)} placeholder="Friend's Name" className="flex-1" />
-            <GlassButton type="button" onClick={addParticipant} className="px-4 py-2">Add Friend</GlassButton>
-          </div>
+          <div className="flex flex-col gap-2 mt-4">
+              <div className="flex gap-2">
+                <GlassInput 
+                  value={friendName} 
+                  onChange={(e) => {
+                    setFriendName(e.target.value);
+                    setFoundFriend(null);
+                    setFriendSearchStatus(null);
+                  }} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (foundFriend) addParticipant();
+                      else searchFriend();
+                    }
+                  }}
+                  placeholder="Friend's Name (e.g. Rahul)" 
+                  className="flex-1" 
+                />
+                {!foundFriend ? (
+                  <GlassButton type="button" onClick={searchFriend} disabled={isSearching} className="px-4 py-2 shrink-0">
+                    {isSearching ? 'Searching...' : 'Check User'}
+                  </GlassButton>
+                ) : (
+                  <GlassButton type="button" onClick={addParticipant} className="px-4 py-2 shrink-0 bg-mint-500 hover:bg-mint-600 text-white">
+                    Add to Expense
+                  </GlassButton>
+                )}
+              </div>
+              {friendSearchStatus && (
+                <div className={`text-sm font-medium px-2 ${foundFriend ? 'text-mint-600 dark:text-mint-400' : 'text-red-500'}`}>
+                  {friendSearchStatus}
+                </div>
+              )}
+            </div>
 
           <div className="mt-4 text-sm font-medium">
             {splitMode === 'Ratio' && (
