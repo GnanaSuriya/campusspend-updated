@@ -151,13 +151,14 @@ def search_user(user_id):
     # Match exactly (case-insensitive) on either name or email
     user = User.query.filter(
         or_(
-            func.trim(func.lower(User.name)) == func.lower(q),
-            func.trim(func.lower(User.email)) == func.lower(q)
+            User.name.ilike(f"%{q}%"),
+            User.email.ilike(f"%{q}%")
         )
     ).first()
     if user:
         return jsonify({"success": True, "data": {"id": user.id, "name": user.name}}), 200
     return jsonify({"success": False, "error": "User not found"}), 404
+
 
 
 
