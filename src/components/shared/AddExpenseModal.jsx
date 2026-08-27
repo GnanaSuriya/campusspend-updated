@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GlassModal, GlassButton, GlassInput } from '../ui';
 import { useAuth } from '../../context/AuthContext';
 import { Plus, X, Percent, CheckCircle2 } from 'lucide-react';
@@ -37,7 +37,7 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
       setParticipants(participants.map((p, i) => ({
         ...p,
         amount: splits[i],
-        percentage: (100 / participants.length).toFixed(2)
+        percentage: parseFloat((100 / participants.length).toFixed(2))
       })));
     } else if (splitMode === 'Ratio') {
       setParticipants(participants.map(p => ({
@@ -290,3 +290,11 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
     </GlassModal>
   );
 }
+
+
+
+
+
+
+
+

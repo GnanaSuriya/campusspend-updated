@@ -111,19 +111,29 @@ def reset_data(user_id):
     for e in created_expenses:
         db.session.delete(e) # This triggers ORM cascade for participants, payers, activities
         
+    created_ids = [e.id for e in created_expenses]
+    
     # Remove user as participant from other people's expenses
-    my_participations = DirectSharedExpenseParticipant.query.filter(
-        DirectSharedExpenseParticipant.user_id == user_id,
-        DirectSharedExpenseParticipant.expense_id.notin_([e.id for e in created_expenses])
-    ).all()
+    if created_ids:
+        my_participations = DirectSharedExpenseParticipant.query.filter(
+            DirectSharedExpenseParticipant.user_id == user_id,
+            DirectSharedExpenseParticipant.expense_id.notin_(created_ids)
+        ).all()
+    else:
+        my_participations = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id).all()
+        
     for p in my_participations:
         db.session.delete(p)
         
     # Remove user as payer from other people's expenses
-    my_payments = DirectSharedExpensePayer.query.filter(
-        DirectSharedExpensePayer.user_id == user_id,
-        DirectSharedExpensePayer.expense_id.notin_([e.id for e in created_expenses])
-    ).all()
+    if created_ids:
+        my_payments = DirectSharedExpensePayer.query.filter(
+            DirectSharedExpensePayer.user_id == user_id,
+            DirectSharedExpensePayer.expense_id.notin_(created_ids)
+        ).all()
+    else:
+        my_payments = DirectSharedExpensePayer.query.filter_by(user_id=user_id).all()
+        
     for p in my_payments:
         db.session.delete(p)
     
