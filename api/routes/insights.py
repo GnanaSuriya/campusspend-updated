@@ -1,6 +1,7 @@
 import os
 import json
-import requests
+from google import genai
+from google.genai import types
 from datetime import datetime
 from flask import Blueprint, jsonify
 from utils.auth import require_auth
@@ -11,7 +12,7 @@ insights_bp = Blueprint('insights', __name__)
 @insights_bp.route('/insights', methods=['POST'])
 @require_auth
 def generate_insights(user_id):
-    api_key = os.getenv('GROQ_API_KEY')
+    api_key = os.getenv('GEMINI_API_KEY')
     now = datetime.utcnow()
     
     # 1. Calculate deterministic financial statistics
@@ -31,7 +32,7 @@ def generate_insights(user_id):
         return jsonify({"success": True, "data": response_data}), 200
 
     if not api_key:
-        print("Missing GROQ_API_KEY")
+        print("Missing GEMINI_API_KEY")
         response_data['ai_error'] = "Insights are temporarily unavailable (Missing API Key)."
         return jsonify({"success": True, "data": response_data}), 200
 
@@ -72,52 +73,36 @@ Return strictly valid JSON matching this schema:
 }}
 """
 
-    # 4. Call Groq
+    # 4. Call Gemini
     try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "groq/compound",
-            "messages": [
-                {"role": "system", "content": "You are a helpful JSON-only assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.4
-        }
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
         
-        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=15)
-        if r.status_code == 200:
-            groq_resp = r.json()
-            content = groq_resp['choices'][0]['message']['content']
-            
-            # Safely parse JSON in case Groq returns markdown fences like ```json ... ```
-            content = content.strip()
-            if content.startswith('```json'):
-                content = content[7:]
-            if content.endswith('```'):
-                content = content[:-3]
-            
-            try:
-                output_json = json.loads(content.strip())
-                response_data['ai'] = output_json
-            except json.JSONDecodeError:
-                response_data['ai'] = None
-                response_data['ai_error'] = "AI response could not be parsed."
-        else:
-            print("Groq API Error:", r.status_code, r.text)
-            try:
-                err_json = r.json()
-                msg = err_json.get("error", {}).get("message", r.text)
-                response_data['ai_error'] = f"Groq Error {r.status_code}: {msg}"
-            except:
-                response_data['ai_error'] = f"Groq Error {r.status_code}: {r.text}"
+        content = response.text
+        
+        # Safely parse JSON in case Gemini returns markdown fences like ```json ... ```
+        content = content.strip()
+        if content.startswith('```json'):
+            content = content[7:]
+        if content.endswith('```'):
+            content = content[:-3]
+        
+        try:
+            output_json = json.loads(content.strip())
+            response_data['ai'] = output_json
+        except json.JSONDecodeError:
+            response_data['ai'] = None
+            response_data['ai_error'] = "AI insights are temporarily unavailable."
             
     except Exception as e:
-        print("Groq Exception:", str(e))
-        response_data['ai_error'] = f"AI response could not be parsed."
+        print("Gemini Exception:", str(e))
+        response_data['ai_error'] = "AI insights are temporarily unavailable."
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
