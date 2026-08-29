@@ -31,9 +31,9 @@ def get_effective_user_spending(user_id, month=None, year=None):
                 continue
                 
         cat = ex.category or 'Other'
-        has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
+        has_completed_settlements = DirectSettlement.query.filter_by(expense_id=ex.id, status='COMPLETED').first() is not None
 
-        if ex.status == 'Completed' or has_settlements or ex.status == 'Pending':
+        if ex.status == 'Completed' or has_completed_settlements or ex.status == 'Pending':
             # MODERN EXPENSES: Always include amount_paid (even when Pending)
             payer_record = DirectSharedExpensePayer.query.filter_by(expense_id=ex.id, user_id=user_id).first()
             if payer_record:
@@ -41,15 +41,15 @@ def get_effective_user_spending(user_id, month=None, year=None):
                 cat_spent[cat] = cat_spent.get(cat, 0.0) + payer_record.amount_paid
                 
             # If Completed, apply the DirectSettlement transfers exactly once
-            if ex.status == 'Completed' or has_settlements:
+            if ex.status == 'Completed' or has_completed_settlements:
                 # Add settlements paid (user is debtor, so they spend MORE money)
-                settlements_paid = DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all()
+                settlements_paid = DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id, status='COMPLETED').all()
                 for s in settlements_paid:
                     total_spent += s.amount
                     cat_spent[cat] = cat_spent.get(cat, 0.0) + s.amount
                     
                 # Subtract settlements received (user is creditor, so they recover/spend LESS money)
-                settlements_received = DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all()
+                settlements_received = DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id, status='COMPLETED').all()
                 for s in settlements_received:
                     total_spent -= s.amount
                     cat_spent[cat] = cat_spent.get(cat, 0.0) - s.amount

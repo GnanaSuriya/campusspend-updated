@@ -321,7 +321,8 @@ class DirectSharedExpense(db.Model):
             'split_mode': self.split_mode or 'Uniform',
             'activities': [a.to_dict() for a in self.activities],
             'participants': p_list,
-            'payers': payer_list
+            'payers': payer_list,
+            'settlements': [s.to_dict() for s in self.settlements]
         }
 
 class DirectSharedExpenseActivity(db.Model):

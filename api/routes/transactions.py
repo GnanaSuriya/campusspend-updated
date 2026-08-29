@@ -53,7 +53,7 @@ def delete_transaction(user_id, tx_id):
 @transactions_bp.route('/dashboard', methods=['GET'])
 @require_auth
 def get_dashboard(user_id):
-    from models import DirectSharedExpenseParticipant, DirectSharedExpense
+    from models import DirectSharedExpenseParticipant, DirectSharedExpense, DirectSettlement
     from dateutil import parser
     user = User.query.get(user_id)
     now = datetime.utcnow()

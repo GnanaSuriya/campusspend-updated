@@ -91,12 +91,19 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
           
           <div className="text-right">
             <p className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-mint-500">
-              ?{expense.total_amount.toFixed(2)}
+              ₹{expense.total_amount.toFixed(2)}
             </p>
             <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 space-y-1">
-               {myPart && <p>Your Share: <span className="font-bold text-slate-700 dark:text-slate-200">?{myPart.amount_owed.toFixed(2)}</span></p>}
+               {myPart && <p>Your Share: <span className="font-bold text-slate-700 dark:text-slate-200">₹{myPart.amount_owed.toFixed(2)}</span></p>}
                {expense.payers?.filter(p => p.user_id === currentUserId).map((p, i) => (
-                 <p key={i}>You Paid: <span className="font-bold text-mint-500">?{p.amount_paid.toFixed(2)}</span></p>
+                 <p key={i}>You Paid: <span className="font-bold text-slate-700 dark:text-slate-200">₹{p.amount_paid.toFixed(2)}</span></p>
+               ))}
+               
+               {expense.settlements?.filter(s => s.debtor_id === currentUserId).map((s, i) => (
+                 <p key={`debtor-${i}`} className="text-red-500 font-bold">You Owe: ₹{s.amount.toFixed(2)}</p>
+               ))}
+               {expense.settlements?.filter(s => s.creditor_id === currentUserId).map((s, i) => (
+                 <p key={`creditor-${i}`} className="text-mint-500 font-bold">Owed to You: ₹{s.amount.toFixed(2)}</p>
                ))}
             </div>
           </div>

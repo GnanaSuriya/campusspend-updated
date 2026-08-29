@@ -20,11 +20,11 @@ def log_activity(expense_id, user_id, action, details=None, reason=None):
     )
     db.session.add(activity)
 
-def generate_settlements_for_expense(expense):
-    # Idempotency check: if settlements exist, do nothing
-    existing_settlements = DirectSettlement.query.filter_by(expense_id=expense.id).first()
-    if existing_settlements:
-        return
+def generate_settlements_for_expense(expense, status='COMPLETED'):
+    existing_settlements = DirectSettlement.query.filter_by(expense_id=expense.id).all()
+    for s in existing_settlements:
+        db.session.delete(s)
+    db.session.flush()
 
     net_balances = {}
     for payer in expense.payers:
@@ -51,7 +51,7 @@ def generate_settlements_for_expense(expense):
             debtor_id=d['user_id'],
             creditor_id=c['user_id'],
             amount=amount,
-            status='COMPLETED'
+            status=status
         )
         db.session.add(settlement)
         
@@ -172,6 +172,9 @@ def create_shared_expense(user_id):
             db.session.add(payer)
             
         log_activity(expense.id, user_id, 'created', details={"total_amount": total_amount, "description": data.get('description', '')})
+        db.session.flush()
+        generate_settlements_for_expense(expense, status='PENDING')
+        
         db.session.commit()
         return jsonify({"success": True, "data": expense.to_dict()}), 201
 

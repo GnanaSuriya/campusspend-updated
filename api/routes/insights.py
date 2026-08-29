@@ -88,7 +88,7 @@ def get_charts(user_id):
         extract('year', Transaction.date) == year
     ).all()
     
-    from models import DirectSharedExpenseParticipant
+    from models import DirectSharedExpenseParticipant, DirectSettlement, DirectSharedExpensePayer
     participants = DirectSharedExpenseParticipant.query.filter(
         DirectSharedExpenseParticipant.user_id == user_id,
         DirectSharedExpenseParticipant.status == 'Accepted'
@@ -108,12 +108,12 @@ def get_charts(user_id):
             day = ex.date.day
             week_idx = min((day - 1) // 7, 4)
             
-            has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
-            if ex.status == 'Completed' or has_settlements:
+            has_completed_settlements = DirectSettlement.query.filter_by(expense_id=ex.id, status='COMPLETED').first() is not None
+            if ex.status == 'Completed' or has_completed_settlements:
                 # Add settlements paid
-                settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all())
+                settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id, status='COMPLETED').all())
                 # Subtract settlements received
-                settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all())
+                settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id, status='COMPLETED').all())
                 
                 # We ALSO need to add what they paid out of pocket, because insights tracks overall spending by week!
                 # If they paid 500, and settlement is 550, they spent 1050 this week.

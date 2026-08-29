@@ -10,9 +10,11 @@ export default function Dashboard() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [alerts, setAlerts] = useState([]);
+  const [error, setError] = useState(null);
 
   const fetchDashboard = useCallback(async () => {
     try {
+      setError(null);
       const [dashRes, alertsRes] = await Promise.all([
         api.get('/transactions/dashboard'),
         api.get('/budgets/alerts')
@@ -20,7 +22,8 @@ export default function Dashboard() {
       if (dashRes.data.success) setData(dashRes.data.data);
       if (alertsRes.data.success) setAlerts(alertsRes.data.data);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch dashboard data:', err);
+      setError(err.response?.data?.error || err.message || "Failed to load dashboard data.");
     }
   }, []);
 
@@ -47,6 +50,23 @@ export default function Dashboard() {
       setIsResetting(false);
     }
   };
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4 animate-in fade-in">
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-700 flex items-center gap-3">
+          <AlertCircle size={24} />
+          <span className="font-medium">{error}</span>
+        </div>
+        <button 
+          onClick={fetchDashboard}
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-bold transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
 
   if (!data) return <div>Loading...</div>;
 
