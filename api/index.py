@@ -57,7 +57,7 @@ try:
             except Exception:
                 db.session.rollback()
             try:
-                db.session.execute(db.text('ALTER TABLE direct_shared_expenses ADD COLUMN split_mode VARCHAR(50) DEFAULT ''Uniform'''))
+                db.session.execute(db.text("ALTER TABLE direct_shared_expenses ADD COLUMN split_mode VARCHAR(50) DEFAULT 'Uniform'"))
                 db.session.commit()
             except Exception:
                 db.session.rollback()
