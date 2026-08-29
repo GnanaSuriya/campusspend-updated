@@ -16,9 +16,30 @@ def get_budgets(user_id):
         month_year = f"{now.year}-{now.month:02d}"
         
     budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year).all()
+    
+    overall_amount = sum(b.amount for b in budgets)
+    data = []
+    has_overall = False
+    
+    for b in budgets:
+        d = b.to_dict()
+        if d['category'] == 'Overall':
+            d['amount'] = overall_amount
+            has_overall = True
+        data.append(d)
+        
+    if not has_overall and overall_amount > 0:
+        data.append({
+            'id': 0,
+            'user_id': user_id,
+            'category': 'Overall',
+            'amount': overall_amount,
+            'month_year': month_year
+        })
+        
     return jsonify({
         "success": True,
-        "data": [b.to_dict() for b in budgets]
+        "data": data
     }), 200
 
 @budgets_bp.route('', methods=['POST'])
@@ -55,9 +76,10 @@ def get_alerts(user_id):
     year = now.year
     month_year = f"{year}-{month:02d}"
     
-    # Calculate spending vs budget to generate alerts on the fly
-    budget = Budget.query.filter_by(user_id=user_id, category='Overall', month_year=month_year).first()
-    if not budget:
+    budgets = Budget.query.filter_by(user_id=user_id, month_year=month_year).all()
+    overall_budget_amount = sum(b.amount for b in budgets)
+    
+    if overall_budget_amount == 0:
         return jsonify({"success": True, "data": []}), 200
         
     this_month_tx = Transaction.query.filter(
@@ -69,8 +91,8 @@ def get_alerts(user_id):
     total_spent = sum(t.amount for t in this_month_tx)
     
     alerts = []
-    if budget.amount > 0:
-        ratio = total_spent / budget.amount
+    if overall_budget_amount > 0:
+        ratio = total_spent / overall_budget_amount
         if ratio >= 1.0:
             alerts.append({"type": "exceeded", "message": "You have exceeded your overall budget for this month."})
         elif ratio >= 0.9:

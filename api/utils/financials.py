@@ -1,4 +1,4 @@
-﻿from sqlalchemy import extract, or_
+from sqlalchemy import extract, or_
 from models import Transaction, DirectSharedExpense, DirectSharedExpenseParticipant, Budget
 import json
 
@@ -55,7 +55,7 @@ def get_budget_summary(user_id, month, year):
     
     total_spent, cat_spent = get_effective_user_spending(user_id, month, year)
     
-    overall_budget = sum(b.amount for b in budgets if b.category == 'Overall')
+    overall_budget = sum(b.amount for b in budgets)
     remaining = overall_budget - total_spent
     percentage_used = round((total_spent / overall_budget * 100) if overall_budget > 0 else 0, 1)
     
