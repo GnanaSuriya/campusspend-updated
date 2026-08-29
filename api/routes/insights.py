@@ -36,7 +36,16 @@ def generate_insights(user_id):
         response_data['ai_error'] = "Insights are temporarily unavailable (Missing API Key)."
         return jsonify({"success": True, "data": response_data}), 200
 
-    # 3. Prompt Engineering
+    # 3. Compact the financial data to avoid sending unnecessary information
+    compact_data = {
+        "total_spent": summary_data.get("total_spent", 0),
+        "total_budget": summary_data.get("total_budget", 0),
+        "remaining": summary_data.get("remaining", 0),
+        "percentage_used": summary_data.get("percentage_used", 0),
+        "categories": summary_data.get("categories", [])
+    }
+
+    # 4. Prompt Engineering
     prompt = f"""
 You are the spending-insights assistant for CampusSpend.
 
@@ -54,7 +63,7 @@ Identify:
 Do not invent transactions or amounts.
 
 FINANCIAL DATA:
-{json.dumps(summary_data, indent=2)}
+{json.dumps(compact_data, indent=2)}
 
 Return strictly valid JSON matching this schema:
 {{
@@ -73,11 +82,11 @@ Return strictly valid JSON matching this schema:
 }}
 """
 
-    # 4. Call Gemini
+    # 5. Call Gemini
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -95,14 +104,24 @@ Return strictly valid JSON matching this schema:
         
         try:
             output_json = json.loads(content.strip())
-            response_data['ai'] = output_json
-        except json.JSONDecodeError:
+            # Validate required fields
+            if "summary" in output_json and "insights" in output_json and "suggestions" in output_json:
+                response_data['ai'] = output_json
+            else:
+                response_data['ai_error'] = "AI insights are temporarily unavailable."
+        except json.JSONDecodeError as je:
+            print("Gemini JSON Decode Error:", str(je))
             response_data['ai'] = None
             response_data['ai_error'] = "AI insights are temporarily unavailable."
             
     except Exception as e:
-        print("Gemini Exception:", str(e))
-        response_data['ai_error'] = "AI insights are temporarily unavailable."
+        error_msg = str(e)
+        print("Gemini Exception Type:", type(e).__name__)
+        print("Gemini Exception:", error_msg)
+        # Safely return the error message for debugging without leaking the key
+        if api_key in error_msg:
+            error_msg = error_msg.replace(api_key, "[REDACTED]")
+        response_data['ai_error'] = f"Gemini Error: {error_msg}"
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
