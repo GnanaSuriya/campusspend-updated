@@ -84,11 +84,15 @@ Return strictly valid JSON matching this schema:
 
     # 5. Call Gemini
     try:
+        # Debugging the API key format without leaking it
+        print("GEMINI_API_KEY configured:", bool(api_key))
+        print("GEMINI_API_KEY prefix:", api_key[:3] if api_key else "NONE")
+        
         # Strip any accidental quotes or whitespace from the environment variable
         clean_key = api_key.strip().strip('"\'')
         
-        # Explicitly enforce Google AI Studio (API key) and disable Vertex AI (OAuth)
-        client = genai.Client(api_key=clean_key, vertexai=False, http_options={'api_version': 'v1beta'})
+        # Use exact working pattern
+        client = genai.Client(api_key=clean_key)
         
         response = client.models.generate_content(
             model='gemini-3-flash-preview',
