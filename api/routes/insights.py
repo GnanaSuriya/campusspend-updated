@@ -84,9 +84,14 @@ Return strictly valid JSON matching this schema:
 
     # 5. Call Gemini
     try:
-        client = genai.Client(api_key=api_key)
+        # Strip any accidental quotes or whitespace from the environment variable
+        clean_key = api_key.strip().strip('"\'')
+        
+        # Explicitly enforce Google AI Studio (API key) and disable Vertex AI (OAuth)
+        client = genai.Client(api_key=clean_key, vertexai=False, http_options={'api_version': 'v1beta'})
+        
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
