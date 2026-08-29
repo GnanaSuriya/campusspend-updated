@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassModal, GlassButton, GlassInput } from '../ui';
 import { useAuth } from '../../context/AuthContext';
 import { Plus, X, Percent, CheckCircle2 } from 'lucide-react';
-import { calculateUniformSplit } from '../../utils/settlements';
+import { calculateUniformSplit, optimizeSettlements } from '../../utils/settlements';
 import api from '../../utils/api';
 
 export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories }) {
@@ -156,6 +156,35 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
   const totalPercentage = participants.reduce((sum, p) => sum + (parseFloat(p.percentage) || 0), 0);
   const totalPaid = payers.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const expenseTotal = parseFloat(amount) || 0;
+  
+  const isPaidValid = Math.abs(totalPaid - expenseTotal) < 0.01;
+  const isAllocatedValid = splitMode === 'Ratio' ? Math.abs(totalPercentage - 100) < 0.1 : Math.abs(totalAllocated - expenseTotal) < 0.01;
+  const canPreviewSettlement = expenseTotal > 0 && isPaidValid && isAllocatedValid && participants.length > 1;
+
+  let previewSettlements = [];
+  let previewBalances = {};
+  
+  if (canPreviewSettlement) {
+    payers.forEach(p => {
+      if (!previewBalances[p.user_id]) previewBalances[p.user_id] = { name: p.name, netBalance: 0, totalPaid: 0, totalOwed: 0 };
+      previewBalances[p.user_id].totalPaid += parseFloat(p.amount) || 0;
+      previewBalances[p.user_id].netBalance += parseFloat(p.amount) || 0;
+    });
+    
+    participants.forEach(p => {
+      let pAmt = 0;
+      if (splitMode === 'Ratio') {
+         pAmt = parseFloat(((parseFloat(p.percentage) || 0) / 100) * expenseTotal);
+      } else {
+         pAmt = parseFloat(p.amount) || 0;
+      }
+      if (!previewBalances[p.user_id]) previewBalances[p.user_id] = { name: p.name, netBalance: 0, totalPaid: 0, totalOwed: 0 };
+      previewBalances[p.user_id].totalOwed += pAmt;
+      previewBalances[p.user_id].netBalance -= pAmt;
+    });
+    
+    previewSettlements = optimizeSettlements(previewBalances);
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -333,7 +362,7 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
               )}
             </div>
 
-          <div className="mt-4 text-sm font-medium">
+        <div className="mt-4 text-sm font-medium">
             {splitMode === 'Ratio' && (
                <div className={Math.abs(totalPercentage - 100) < 0.1 ? 'text-mint-500' : 'text-amber-500'}>
                  Total Allocated: {totalPercentage}% / 100%
@@ -341,11 +370,62 @@ export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories 
             )}
             {splitMode !== 'Ratio' && (
                <div className={Math.abs(totalAllocated - expenseTotal) < 0.01 ? 'text-mint-500' : 'text-amber-500'}>
-                 Total Allocated: ?{totalAllocated.toFixed(2)} / ?{expenseTotal.toFixed(2)}
+                 Total Allocated: ₹{totalAllocated.toFixed(2)} / ₹{expenseTotal.toFixed(2)}
                </div>
             )}
           </div>
         </div>
+        
+        {/* Settlement Preview */}
+        {canPreviewSettlement && (
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-4 mt-6">
+            <h3 className="font-bold text-slate-800 dark:text-white mb-4">Settlement</h3>
+            <div className="space-y-4">
+              {previewSettlements.length > 0 ? (
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                  {previewSettlements.map((s, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-sm font-medium mb-1 last:mb-0">
+                      <span className="text-slate-700 dark:text-slate-300">{s.from} → {s.to}</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">₹{s.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                  <CheckCircle2 size={16} /> Everyone has paid their correct share.
+                </div>
+              )}
+            
+              <div className="space-y-2">
+                {Object.values(previewBalances).map((b, idx) => {
+                  const paid = b.totalPaid;
+                  const share = b.totalOwed;
+                  const net = b.netBalance;
+                  
+                  let settlementText = '';
+                  if (net > 0.01) settlementText = `Receives ₹${net.toFixed(2)}`;
+                  else if (net < -0.01) settlementText = `Pays ₹${Math.abs(net).toFixed(2)}`;
+                  
+                  return (
+                    <div key={idx} className="text-xs text-slate-600 dark:text-slate-400 flex flex-col gap-1 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{b.name}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                        <span>Paid: ₹{paid.toFixed(2)}</span>
+                        <span>Share: ₹{share.toFixed(2)}</span>
+                        {settlementText && <span className={net > 0 ? "text-emerald-500" : "text-amber-500"}>{settlementText}</span>}
+                        <span>Final cost: ₹{share.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-4 text-center">
+              This is a preview. Settlements occur only when users accept.
+            </p>
+          </div>
+        )}
         
         <div className="flex justify-end pt-4">
           <GlassButton type="submit" className="px-8 py-3 w-full">Send Request</GlassButton>
