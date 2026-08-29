@@ -3,6 +3,7 @@ import { GlassModal, GlassButton, GlassInput } from '../ui';
 import { useAuth } from '../../context/AuthContext';
 import { Plus, X, Percent, CheckCircle2 } from 'lucide-react';
 import { calculateUniformSplit } from '../../utils/settlements';
+import api from '../../utils/api';
 
 export default function AddExpenseModal({ isOpen, onClose, onSubmit, categories }) {
   const { user } = useAuth();
