@@ -92,15 +92,28 @@ Return strictly valid JSON matching this schema:
         if r.status_code == 200:
             groq_resp = r.json()
             content = groq_resp['choices'][0]['message']['content']
-            output_json = json.loads(content)
+            
+            # Safely parse JSON in case Groq returns markdown fences like ```json ... ```
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]
+            if content.endswith('```'):
+                content = content[:-3]
+            
+            output_json = json.loads(content.strip())
             response_data['ai'] = output_json
         else:
-            print("Groq API Error:", r.text)
-            response_data['ai_error'] = "Insights are temporarily unavailable."
+            print("Groq API Error:", r.status_code, r.text)
+            try:
+                err_json = r.json()
+                msg = err_json.get("error", {}).get("message", r.text)
+                response_data['ai_error'] = f"Groq Error {r.status_code}: {msg}"
+            except:
+                response_data['ai_error'] = f"Groq Error {r.status_code}: {r.text}"
             
     except Exception as e:
         print("Groq Exception:", str(e))
-        response_data['ai_error'] = "Insights are temporarily unavailable. Please try again later."
+        response_data['ai_error'] = f"Exception: {str(e)}"
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
