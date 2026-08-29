@@ -79,7 +79,7 @@ Return strictly valid JSON matching this schema:
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama3-70b-8192",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {"role": "system", "content": "You are a helpful JSON-only assistant."},
                 {"role": "user", "content": prompt}
