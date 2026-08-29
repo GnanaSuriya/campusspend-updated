@@ -91,7 +91,7 @@ Return strictly valid JSON matching this schema:
         client = genai.Client(api_key=clean_key, vertexai=False, http_options={'api_version': 'v1beta'})
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3-flash-preview',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
