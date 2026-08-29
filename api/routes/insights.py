@@ -1,6 +1,7 @@
 import os
 import json
-import requests
+import urllib.request
+from urllib.error import URLError, HTTPError
 from datetime import datetime
 from flask import Blueprint, jsonify
 from utils.auth import require_auth
@@ -11,10 +12,12 @@ insights_bp = Blueprint('insights', __name__)
 @insights_bp.route('/insights', methods=['POST'])
 @require_auth
 def generate_insights(user_id):
-    api_key = os.getenv('OPENROUTER_API_KEY')
+    api_key = os.getenv('GROQ_API_KEY')
     now = datetime.utcnow()
     
-    # 1. Calculate deterministic financial statistics (SINGLE SOURCE OF TRUTH)
+    # 1. Calculate deterministic financial statistics
+    # This uses the single-source-of-truth from financials.py
+    # which correctly handles shared expenses and limits by current month.
     summary_data = get_budget_summary(user_id, now.month, now.year)
     
     # 2. Prepare base response
@@ -24,106 +27,108 @@ def generate_insights(user_id):
         "ai_error": None
     }
     
-    # Skip AI if no spending
+    # If no spending, we skip the AI call
     if summary_data.get('total_spent', 0) == 0:
         return jsonify({"success": True, "data": response_data}), 200
 
     if not api_key:
-        print("Missing OPENROUTER_API_KEY")
+        print("Missing GROQ_API_KEY")
         response_data['ai_error'] = "Insights are temporarily unavailable (Missing API Key)."
         return jsonify({"success": True, "data": response_data}), 200
 
-    # 3. Compact Financial Data
-    compact_data = {
-        "total_spent": summary_data.get("total_spent", 0),
-        "total_budget": summary_data.get("total_budget", 0),
-        "remaining": summary_data.get("remaining", 0),
-        "percentage_used": summary_data.get("percentage_used", 0),
-        "categories": summary_data.get("categories", [])
-    }
+    # 3. Prompt Engineering
+    prompt = f"""
+You are the spending-insights assistant for CampusSpend.
 
-    # 4. AI Prompting
-    system_prompt = """You are the AI spending-insights assistant for CampusSpend.
+The financial statistics provided to you have already been calculated and verified by the application backend.
+DO NOT recalculate, modify, invent, or contradict any financial numbers.
 
-The financial data provided by the application backend has already been calculated and verified.
-You MUST NOT recalculate, alter, invent, or contradict any financial number.
-
-Your job is only to explain the provided numbers and provide useful spending observations.
+Analyze the provided monthly spending statistics and produce concise, practical insights.
 Identify:
-1. Highest spending category.
-2. Categories taking an unusually large percentage of spending.
-3. Whether spending is approaching or exceeding the budget.
-4. Useful spending patterns.
-5. Practical ways to reduce unnecessary spending.
+1. The highest spending category.
+2. Any category consuming an unusually large portion of spending.
+3. Whether the user is approaching or exceeding their budget.
+4. Practical ways to reduce unnecessary spending.
+5. One or two useful observations about the spending pattern.
 
-Never invent transactions.
-Never invent categories.
-Never invent amounts.
+Do not invent transactions or amounts.
 
-Return ONLY valid JSON matching this schema:
-{
-    "summary": "Short summary of the user's monthly spending.",
-    "insights": [
-        {
-            "title": "Short title",
-            "description": "Explanation based only on supplied financial data.",
-            "type": "category"
-        }
-    ],
-    "suggestions": [
-        "Practical suggestion 1",
-        "Practical suggestion 2"
-    ]
-}"""
+FINANCIAL DATA:
+{json.dumps(summary_data, indent=2)}
 
+Return strictly valid JSON matching this schema:
+{{
+  "summary": "You spent ₹X this month, which is Y% of your budget.",
+  "insights": [
+    {{
+      "title": "Short title",
+      "description": "Insight description referencing real numbers.",
+      "type": "category"
+    }}
+  ],
+  "suggestions": [
+    "Suggestion 1",
+    "Suggestion 2"
+  ]
+}}
+"""
+
+    # 4. Call Groq
     try:
+        url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {api_key.strip()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://expenseshare-nine.vercel.app",
-            "X-Title": "CampusSpend"
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         }
-        
-        # Using gpt-4o-mini as it guarantees fast, high-quality, and structured JSON output on OpenRouter
         payload = {
-            "model": "openai/gpt-4o-mini",
+            "model": "groq/compound" if "llama" not in "groq/compound" else "llama-3.3-70b-versatile", # Fallback logic preserved
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the verified financial data:\n{json.dumps(compact_data, indent=2)}"}
+                {"role": "system", "content": "You are a helpful JSON-only assistant."},
+                {"role": "user", "content": prompt}
             ],
             "response_format": {"type": "json_object"},
-            "temperature": 0.3
+            "temperature": 0.4
         }
         
-        r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=15)
+        # Override with exact model used in last known working Groq state
+        payload["model"] = "llama-3.3-70b-versatile"
         
-        if r.status_code == 200:
-            resp_json = r.json()
-            content = resp_json['choices'][0]['message']['content']
-            
-            # Safely parse JSON
-            content = content.strip()
-            if content.startswith('```json'):
-                content = content[7:]
-            if content.endswith('```'):
-                content = content[:-3]
-            
-            try:
-                output_json = json.loads(content.strip())
-                # Validate the required JSON structure
-                if "summary" in output_json and "insights" in output_json and "suggestions" in output_json:
-                    response_data['ai'] = output_json
-                else:
-                    response_data['ai_error'] = "AI insights are temporarily unavailable."
-            except json.JSONDecodeError:
-                response_data['ai_error'] = "AI insights are temporarily unavailable."
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+        
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                resp_body = response.read().decode('utf-8')
+                groq_resp = json.loads(resp_body)
+                content = groq_resp['choices'][0]['message']['content']
                 
-        else:
-            print("OpenRouter Error:", r.status_code, r.text)
-            response_data['ai_error'] = f"OpenRouter Error {r.status_code}: AI insights are temporarily unavailable."
+                # Safely parse JSON in case Groq returns markdown fences like ```json ... ```
+                content = content.strip()
+                if content.startswith('```json'):
+                    content = content[7:]
+                if content.endswith('```'):
+                    content = content[:-3]
+                
+                try:
+                    output_json = json.loads(content.strip())
+                    response_data['ai'] = output_json
+                except json.JSONDecodeError:
+                    response_data['ai'] = None
+                    response_data['ai_error'] = "AI response could not be parsed."
+        except HTTPError as e:
+            err_body = e.read().decode('utf-8')
+            print("Groq API Error:", e.code, err_body)
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error", {}).get("message", err_body)
+                response_data['ai_error'] = f"Groq Error {e.code}: {msg}"
+            except:
+                response_data['ai_error'] = f"Groq Error {e.code}: {err_body}"
             
     except Exception as e:
-        print("OpenRouter Exception:", str(e))
-        response_data['ai_error'] = "AI insights are temporarily unavailable."
+        print("Groq Exception:", str(e))
+        response_data['ai_error'] = "AI response could not be parsed."
 
+    # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
+
