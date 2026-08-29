@@ -100,7 +100,7 @@ Return strictly valid JSON matching this schema:
         
         # Using a reliable free model on OpenRouter
         payload = {
-            "model": "meta-llama/llama-3.3-70b-instruct:free",
+            "model": "meta-llama/llama-3.3-70b-instruct",
             "messages": [
                 {"role": "system", "content": "You are a helpful JSON-only assistant."},
                 {"role": "user", "content": prompt}
