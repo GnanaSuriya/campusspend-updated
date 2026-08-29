@@ -12,7 +12,7 @@ insights_bp = Blueprint('insights', __name__)
 @insights_bp.route('/insights', methods=['POST'])
 @require_auth
 def generate_insights(user_id):
-    api_key = os.getenv('GROQ_API_KEY')
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('AI_API_KEY')
     now = datetime.utcnow()
     
     # 1. Calculate deterministic financial statistics
@@ -32,11 +32,19 @@ def generate_insights(user_id):
         return jsonify({"success": True, "data": response_data}), 200
 
     if not api_key:
-        print("Missing GROQ_API_KEY")
+        print("Missing GEMINI_API_KEY")
         response_data['ai_error'] = "Insights are temporarily unavailable (Missing API Key)."
         return jsonify({"success": True, "data": response_data}), 200
 
-    # 3. Prompt Engineering
+    # 3. Compact Financial Data
+    compact_data = {
+        "total_spent": summary_data.get("total_spent", 0),
+        "total_budget": summary_data.get("total_budget", 0),
+        "remaining": summary_data.get("remaining", 0),
+        "categories": summary_data.get("categories", [])
+    }
+
+    # 4. Prompt Engineering
     prompt = f"""
 You are the spending-insights assistant for CampusSpend.
 
@@ -54,7 +62,7 @@ Identify:
 Do not invent transactions or amounts.
 
 FINANCIAL DATA:
-{json.dumps(summary_data, indent=2)}
+{json.dumps(compact_data, indent=2)}
 
 Return strictly valid JSON matching this schema:
 {{
@@ -73,25 +81,22 @@ Return strictly valid JSON matching this schema:
 }}
 """
 
-    # 4. Call Groq
+    # 5. Call Gemini via REST (No external SDKs required)
     try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
+        clean_key = api_key.strip().strip('"\'')
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={clean_key}"
         headers = {
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": "groq/compound" if "llama" not in "groq/compound" else "llama-3.3-70b-versatile", # Fallback logic preserved
-            "messages": [
-                {"role": "system", "content": "You are a helpful JSON-only assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.4
-        }
         
-        # Override with exact model used in last known working Groq state
-        payload["model"] = "llama-3.3-70b-versatile"
+        # Gemini specific JSON mode payload
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.4
+            }
+        }
         
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(url, data=data, headers=headers, method='POST')
@@ -99,10 +104,13 @@ Return strictly valid JSON matching this schema:
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
                 resp_body = response.read().decode('utf-8')
-                groq_resp = json.loads(resp_body)
-                content = groq_resp['choices'][0]['message']['content']
+                gemini_resp = json.loads(resp_body)
                 
-                # Safely parse JSON in case Groq returns markdown fences like ```json ... ```
+                content = ""
+                if "candidates" in gemini_resp and len(gemini_resp["candidates"]) > 0:
+                    content = gemini_resp["candidates"][0]["content"]["parts"][0]["text"]
+                
+                # Safely parse JSON in case AI returns markdown fences
                 content = content.strip()
                 if content.startswith('```json'):
                     content = content[7:]
@@ -111,22 +119,29 @@ Return strictly valid JSON matching this schema:
                 
                 try:
                     output_json = json.loads(content.strip())
-                    response_data['ai'] = output_json
+                    # Validate required fields
+                    if "summary" in output_json and "insights" in output_json and "suggestions" in output_json:
+                        response_data['ai'] = output_json
+                    else:
+                        response_data['ai_error'] = "AI insights are temporarily unavailable."
                 except json.JSONDecodeError:
                     response_data['ai'] = None
                     response_data['ai_error'] = "AI response could not be parsed."
+                    
         except HTTPError as e:
             err_body = e.read().decode('utf-8')
-            print("Groq API Error:", e.code, err_body)
+            print("Gemini API Error:", e.code)
+            # Avoid leaking the API key in error messages
+            safe_err = err_body.replace(clean_key, "[REDACTED]")
             try:
-                err_json = json.loads(err_body)
-                msg = err_json.get("error", {}).get("message", err_body)
-                response_data['ai_error'] = f"Groq Error {e.code}: {msg}"
+                err_json = json.loads(safe_err)
+                msg = err_json.get("error", {}).get("message", safe_err)
+                response_data['ai_error'] = f"AI Error {e.code}: {msg}"
             except:
-                response_data['ai_error'] = f"Groq Error {e.code}: {err_body}"
+                response_data['ai_error'] = f"AI Error {e.code}"
             
     except Exception as e:
-        print("Groq Exception:", str(e))
+        print("Gemini Exception:", type(e).__name__)
         response_data['ai_error'] = "AI response could not be parsed."
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
