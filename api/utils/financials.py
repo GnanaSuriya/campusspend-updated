@@ -1,17 +1,11 @@
 from sqlalchemy import extract, or_
-from models import Transaction, DirectSharedExpense, DirectSharedExpenseParticipant, Budget
+from models import Transaction, DirectSharedExpense, DirectSharedExpenseParticipant, Budget, DirectSharedExpensePayer, DirectSettlement
 import json
 
 def get_effective_user_spending(user_id, month=None, year=None):
     """
     Returns total spent and a dictionary of category spending for the user.
-    Uses the strict single-source-of-truth rules:
-    - Normal transactions are fully counted.
-    - Shared expenses: User's budget is only reduced by their OWN effective share.
-    - Status: Only 'Accepted' participants count.
-    - Change_Pending: Uses the existing accepted amount in the DB, ignoring pending_changes.
-    - Creator's share: A creator inherently 'Accepts' their own expense when creating it, 
-      so their status is 'Accepted'.
+    Uses the strict single-source-of-truth rules with explicit settlements.
     """
     query = Transaction.query.filter(Transaction.user_id == user_id)
     if month and year:
@@ -19,11 +13,9 @@ def get_effective_user_spending(user_id, month=None, year=None):
     
     personal_tx = query.all()
     
-    # Get all participant records for this user that are Accepted
-    # (or if the overall expense is Change_Pending, the participant record still holds the original Accepted value)
+    # Get all participant records for this user
     participants = DirectSharedExpenseParticipant.query.filter(
-        DirectSharedExpenseParticipant.user_id == user_id,
-        DirectSharedExpenseParticipant.status == 'Accepted'
+        DirectSharedExpenseParticipant.user_id == user_id
     ).all()
     
     cat_spent = {}
@@ -40,12 +32,39 @@ def get_effective_user_spending(user_id, month=None, year=None):
             if ex.date.month != month or ex.date.year != year:
                 continue
                 
-        # The user's effective share is exactly p.amount_owed
-        # (This ignores how much they actually paid; paid vs owed is handled in settlements)
-        amount = p.amount_owed
-        total_spent += amount
-        cat = ex.category or 'Other'
-        cat_spent[cat] = cat_spent.get(cat, 0.0) + amount
+        # If Pending, do absolutely nothing (skip)
+        
+        has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
+
+        if ex.status == 'Completed' or has_settlements:
+            # Budget is handled entirely by amount_paid + Settlement transactions
+            payer_record = DirectSharedExpensePayer.query.filter_by(expense_id=ex.id, user_id=user_id).first()
+            if payer_record:
+                amount = payer_record.amount_paid
+                total_spent += amount
+                cat = ex.category or 'Other'
+                cat_spent[cat] = cat_spent.get(cat, 0.0) + amount
+                
+            # Add settlements paid (user is debtor)
+            settlements_paid = DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all()
+            for s in settlements_paid:
+                total_spent += s.amount
+                cat = ex.category or 'Other'
+                cat_spent[cat] = cat_spent.get(cat, 0.0) + s.amount
+                
+            # Subtract settlements received (user is creditor)
+            settlements_received = DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all()
+            for s in settlements_received:
+                total_spent -= s.amount
+                cat = ex.category or 'Other'
+                cat_spent[cat] = cat_spent.get(cat, 0.0) - s.amount
+                
+        elif ex.status == 'Accepted' or p.status == 'Accepted':
+            # Old logic for legacy Accepted expenses that have no settlement transactions
+            amount = p.amount_owed
+            total_spent += amount
+            cat = ex.category or 'Other'
+            cat_spent[cat] = cat_spent.get(cat, 0.0) + amount
 
     return total_spent, cat_spent
 

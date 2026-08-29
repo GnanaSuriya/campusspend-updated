@@ -1,6 +1,6 @@
-﻿from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify
 from datetime import datetime
-from models import DirectSharedExpense, DirectSharedExpenseActivity, DirectSharedExpenseParticipant, DirectSharedExpensePayer, User, Alert
+from models import DirectSharedExpense, DirectSharedExpenseActivity, DirectSharedExpenseParticipant, DirectSharedExpensePayer, User, Alert, DirectSettlement
 from database import db
 from utils.auth import require_auth
 from sqlalchemy import or_
@@ -19,6 +19,49 @@ def log_activity(expense_id, user_id, action, details=None, reason=None):
         reason=reason
     )
     db.session.add(activity)
+
+def generate_settlements_for_expense(expense):
+    # Idempotency check: if settlements exist, do nothing
+    existing_settlements = DirectSettlement.query.filter_by(expense_id=expense.id).first()
+    if existing_settlements:
+        return
+
+    net_balances = {}
+    for payer in expense.payers:
+        net_balances[payer.user_id] = net_balances.get(payer.user_id, 0.0) + payer.amount_paid
+        
+    for p in expense.participants:
+        net_balances[p.user_id] = net_balances.get(p.user_id, 0.0) - p.amount_owed
+        
+    debtors = []
+    creditors = []
+    for uid, net in net_balances.items():
+        if net < -0.01:
+            debtors.append({'user_id': uid, 'amount': abs(net)})
+        elif net > 0.01:
+            creditors.append({'user_id': uid, 'amount': net})
+            
+    while debtors and creditors:
+        d = debtors[0]
+        c = creditors[0]
+        amount = min(d['amount'], c['amount'])
+        
+        settlement = DirectSettlement(
+            expense_id=expense.id,
+            debtor_id=d['user_id'],
+            creditor_id=c['user_id'],
+            amount=amount,
+            status='COMPLETED'
+        )
+        db.session.add(settlement)
+        
+        d['amount'] -= amount
+        c['amount'] -= amount
+        
+        if d['amount'] < 0.01:
+            debtors.pop(0)
+        if c['amount'] < 0.01:
+            creditors.pop(0)
 
 @direct_shared_bp.route('', methods=['GET'])
 @require_auth
@@ -55,13 +98,23 @@ def create_shared_expense(user_id):
         
         # Determine first friend for legacy fallback
         first_friend = None
+        total_percentage = 0.0
+        
         for p in data['participants']:
+            perc = float(p.get('percentage', 0))
+            if perc < 0:
+                return jsonify({"success": False, "error": "Percentages cannot be negative."}), 400
+            total_percentage += perc
+            
             uid = p.get('user_id')
             if uid and uid != user_id:
                 first_friend = User.query.get(uid)
                 if first_friend:
-                    break
-        
+                    continue
+
+        if abs(total_percentage - 100.0) > 0.01:
+            return jsonify({"success": False, "error": f"Percentages must total exactly 100%. Currently {total_percentage}%"}), 400
+            
         if not first_friend:
             return jsonify({"success": False, "error": "Must include at least one valid friend."}), 400
             
@@ -193,7 +246,19 @@ def update_shared_expense(user_id, exp_id):
         elif new_status == 'Accepted':
             if participant:
                 participant.status = 'Accepted'
-            expense.status = 'Accepted' # legacy fallback
+            
+            all_accepted = True
+            for p in expense.participants:
+                if p.status != 'Accepted':
+                    all_accepted = False
+                    break
+            
+            if all_accepted:
+                expense.status = 'Completed'
+                generate_settlements_for_expense(expense)
+            else:
+                expense.status = 'Pending'
+                
             log_activity(expense.id, user_id, 'accepted')
             
         db.session.commit()

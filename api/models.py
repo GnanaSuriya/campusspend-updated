@@ -202,6 +202,35 @@ class DirectSharedExpensePayer(db.Model):
         }
 
 
+class DirectSettlement(db.Model):
+    __tablename__ = 'direct_settlements'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('direct_shared_expenses.id'), nullable=False)
+    debtor_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    creditor_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default='COMPLETED')
+
+    __table_args__ = (
+        db.UniqueConstraint('expense_id', 'debtor_id', 'creditor_id', name='uix_settlement'),
+    )
+
+    debtor = db.relationship('User', foreign_keys=[debtor_id])
+    creditor = db.relationship('User', foreign_keys=[creditor_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'expense_id': self.expense_id,
+            'debtor_id': self.debtor_id,
+            'debtor_name': self.debtor.name if self.debtor else None,
+            'creditor_id': self.creditor_id,
+            'creditor_name': self.creditor.name if self.creditor else None,
+            'amount': self.amount,
+            'status': self.status
+        }
+
+
 class DirectSharedExpense(db.Model):
     __tablename__ = 'direct_shared_expenses'
     id = db.Column(db.Integer, primary_key=True)
@@ -228,6 +257,7 @@ class DirectSharedExpense(db.Model):
     activities = db.relationship('DirectSharedExpenseActivity', backref='shared_expense', cascade="all, delete-orphan", order_by="DirectSharedExpenseActivity.created_at.asc()")
     participants = db.relationship('DirectSharedExpenseParticipant', backref='shared_expense', cascade="all, delete-orphan")
     payers = db.relationship('DirectSharedExpensePayer', backref='shared_expense', cascade="all, delete-orphan")
+    settlements = db.relationship('DirectSettlement', backref='shared_expense', cascade="all, delete-orphan")
 
     def to_dict(self):
         import json
