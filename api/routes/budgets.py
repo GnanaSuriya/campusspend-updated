@@ -68,6 +68,42 @@ def set_budget(user_id):
     db.session.commit()
     return jsonify({"success": True, "data": budget.to_dict()}), 200
 
+@budgets_bp.route('/<int:budget_id>', methods=['PUT'])
+@require_auth
+def update_budget(user_id, budget_id):
+    data = request.json
+    amount = data.get('amount')
+    
+    if amount is None:
+        return jsonify({"success": False, "error": "Amount is required"}), 400
+        
+    try:
+        amount = float(amount)
+        if amount < 0:
+            return jsonify({"success": False, "error": "Amount cannot be negative"}), 400
+    except ValueError:
+        return jsonify({"success": False, "error": "Amount must be a number"}), 400
+        
+    if budget_id == 0:
+        category = data.get('category', 'Overall')
+        month_year = data.get('month_year')
+        if not month_year:
+            return jsonify({"success": False, "error": "month_year required for new budget"}), 400
+        budget = Budget.query.filter_by(user_id=user_id, category=category, month_year=month_year).first()
+        if not budget:
+            budget = Budget(user_id=user_id, category=category, amount=amount, month_year=month_year)
+            db.session.add(budget)
+        else:
+            budget.amount = amount
+    else:
+        budget = Budget.query.filter_by(id=budget_id, user_id=user_id).first()
+        if not budget:
+            return jsonify({"success": False, "error": "Budget not found"}), 404
+        budget.amount = amount
+        
+    db.session.commit()
+    return jsonify({"success": True, "data": budget.to_dict()}), 200
+
 @budgets_bp.route('/alerts', methods=['GET'])
 @require_auth
 def get_alerts(user_id):
