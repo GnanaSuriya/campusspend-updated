@@ -79,7 +79,7 @@ Return strictly valid JSON matching this schema:
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "groq/compound",
             "messages": [
                 {"role": "system", "content": "You are a helpful JSON-only assistant."},
                 {"role": "user", "content": prompt}
@@ -100,8 +100,12 @@ Return strictly valid JSON matching this schema:
             if content.endswith('```'):
                 content = content[:-3]
             
-            output_json = json.loads(content.strip())
-            response_data['ai'] = output_json
+            try:
+                output_json = json.loads(content.strip())
+                response_data['ai'] = output_json
+            except json.JSONDecodeError:
+                response_data['ai'] = None
+                response_data['ai_error'] = "AI response could not be parsed."
         else:
             print("Groq API Error:", r.status_code, r.text)
             try:
@@ -113,7 +117,7 @@ Return strictly valid JSON matching this schema:
             
     except Exception as e:
         print("Groq Exception:", str(e))
-        response_data['ai_error'] = f"Exception: {str(e)}"
+        response_data['ai_error'] = f"AI response could not be parsed."
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
