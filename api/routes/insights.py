@@ -184,3 +184,41 @@ Return strictly valid JSON matching this schema:
 
     # Return the unified data, even if AI failed, so frontend can display deterministic numbers
     return jsonify({"success": True, "data": response_data}), 200
+
+@insights_bp.route('/gemini-test', methods=['GET'])
+def gemini_test():
+    api_key = os.getenv("GEMINI_API_KEY")
+    key_configured = bool(api_key)
+    key_prefix = api_key[:4] if api_key else "NONE"
+    key_length = len(api_key) if api_key else 0
+    
+    response_data = {
+        "key_configured": key_configured,
+        "key_prefix": key_prefix,
+        "key_length": key_length,
+        "gemini_response": None,
+        "error": None
+    }
+    
+    if not api_key:
+        response_data["error"] = "API key missing in environment."
+        return jsonify(response_data), 200
+        
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents="Reply with exactly: OK"
+        )
+        response_data["gemini_response"] = response.text
+    except Exception as e:
+        import traceback
+        error_str = str(e).replace(api_key, "[REDACTED]") if api_key else str(e)
+        response_data["error"] = {
+            "type": type(e).__name__,
+            "message": error_str,
+            "traceback": traceback.format_exc().replace(api_key, "[REDACTED]") if api_key else traceback.format_exc()
+        }
+        
+    return jsonify(response_data), 200
+
