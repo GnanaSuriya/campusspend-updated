@@ -85,22 +85,66 @@ export default function Insights() {
             {data.financials.total_spent === 0 ? (
               <p className="text-slate-500 dark:text-slate-400">No spending recorded this month.</p>
             ) : (
-              <div className="space-y-3">
-                {data.financials.categories
-                  .filter(c => c.spent > 0)
-                  .sort((a, b) => b.spent - a.spent)
-                  .map((c, idx) => {
-                    const percentage = ((c.spent / data.financials.total_spent) * 100).toFixed(2);
-                    return (
-                      <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/50 last:border-0">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{c.name}</span>
-                        <div className="flex gap-8 text-right min-w-[150px] justify-end">
-                          <span className="font-bold text-slate-800 dark:text-white w-24">₹{c.spent.toFixed(2)}</span>
-                          <span className="text-slate-500 dark:text-slate-400 w-16">{percentage}%</span>
+              <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
+                
+                {/* CSS Donut Chart */}
+                <div className="relative w-48 h-48 shrink-0 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 shadow-inner" style={{
+                  background: `conic-gradient(${
+                    (() => {
+                      let currentAngle = 0;
+                      const sortedCats = data.financials.categories
+                        .filter(c => c.spent > 0)
+                        .sort((a, b) => b.spent - a.spent);
+                        
+                      // Tailwind colors mapped roughly
+                      const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'];
+                      
+                      return sortedCats.map((c, i) => {
+                        const perc = (c.spent / data.financials.total_spent) * 100;
+                        const start = currentAngle;
+                        currentAngle += perc;
+                        return `${colors[i % colors.length]} ${start}% ${currentAngle}%`;
+                      }).join(', ')
+                    })()
+                  })`
+                }}>
+                  {/* Inner cutout for donut shape */}
+                  <div className="absolute w-36 h-36 bg-white dark:bg-slate-900 rounded-full flex flex-col items-center justify-center shadow-[inset_0px_2px_4px_rgba(0,0,0,0.1)]">
+                    <span className="text-sm text-slate-500 dark:text-slate-400">Total</span>
+                    <span className="text-xl font-black text-slate-800 dark:text-white">₹{data.financials.total_spent.toFixed(0)}</span>
+                  </div>
+                </div>
+
+                {/* Category List with Progress Bars */}
+                <div className="flex-1 w-full space-y-4">
+                  {data.financials.categories
+                    .filter(c => c.spent > 0)
+                    .sort((a, b) => b.spent - a.spent)
+                    .map((c, idx) => {
+                      const percentage = ((c.spent / data.financials.total_spent) * 100).toFixed(1);
+                      const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-amber-500', 'bg-red-500', 'bg-violet-500', 'bg-slate-500'];
+                      const bgClass = colors[idx % colors.length];
+                      
+                      return (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between items-center text-sm font-medium">
+                            <span className="text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                              <span className={`w-3 h-3 rounded-full ${bgClass}`}></span>
+                              {c.name}
+                            </span>
+                            <div className="flex gap-4">
+                              <span className="text-slate-800 dark:text-white font-bold">₹{c.spent.toFixed(2)}</span>
+                              <span className="text-slate-500 dark:text-slate-400 w-12 text-right">{percentage}%</span>
+                            </div>
+                          </div>
+                          {/* Progress Bar */}
+                          <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className={`h-full ${bgClass} rounded-full`} style={{ width: `${percentage}%` }}></div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                </div>
               </div>
             )}
           </GlassCard>

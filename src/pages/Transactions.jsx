@@ -4,6 +4,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getCategories } from '../utils/categories';
 import { Plus, Trash2 } from 'lucide-react';
+import TransactionCard from '../components/shared/TransactionCard';
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -72,49 +73,21 @@ export default function Transactions() {
         </GlassButton>
       </header>
 
-      <GlassCard className="overflow-hidden p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-white/20 border-b border-white/40">
-                <th className="p-4 font-bold text-slate-700">Date</th>
-                <th className="p-4 font-bold text-slate-700">Category</th>
-                <th className="p-4 font-bold text-slate-700">Description</th>
-                <th className="p-4 font-bold text-slate-700">Method</th>
-                <th className="p-4 font-bold text-slate-700 text-right">Amount</th>
-                <th className="p-4 font-bold text-slate-700 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map(tx => (
-                <tr key={tx.id} className="border-b border-white/20 hover:bg-white/30 transition-colors">
-                  <td className="p-4 text-slate-600">{new Date(tx.date).toLocaleDateString()}</td>
-                  <td className="p-4 font-medium text-slate-800">{tx.category}</td>
-                  <td className="p-4 text-slate-600">{tx.description || '-'}</td>
-                  <td className="p-4 text-slate-600">{tx.payment_method || '-'}</td>
-                  <td className="p-4 font-bold text-slate-800 text-right">₹{tx.amount.toFixed(2)}</td>
-                  <td className="p-4 text-center">
-                    {!tx.is_shared && (
-                      <button 
-                        onClick={() => handleDelete(tx.id)}
-                        className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-500/10 transition-colors"
-                        title="Delete Transaction"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {transactions.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="p-8 text-center text-slate-500">No transactions found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </GlassCard>
+      <div className="space-y-2 mt-4">
+        {transactions.length === 0 ? (
+          <GlassCard className="p-8 text-center">
+            <p className="text-slate-500 dark:text-slate-400">No transactions found.</p>
+          </GlassCard>
+        ) : (
+          transactions.map(tx => (
+            <TransactionCard 
+              key={tx.id} 
+              tx={tx} 
+              onDelete={handleDelete} 
+            />
+          ))
+        )}
+      </div>
 
       <GlassModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Expense">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
