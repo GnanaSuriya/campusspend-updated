@@ -94,6 +94,16 @@ def update_me(user_id):
 @auth_bp.route('/reset', methods=['DELETE'])
 @require_auth
 def reset_data(user_id):
+    data = request.json or {}
+    password = data.get('password')
+    
+    if not password:
+        return jsonify({"success": False, "error": "Invalid password."}), 401
+        
+    user = User.query.get(user_id)
+    if not user or not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        return jsonify({"success": False, "error": "Invalid password."}), 401
+        
     from models import (
         Transaction, Budget, DirectSharedExpense, Alert, 
         DirectSharedExpenseParticipant, DirectSharedExpensePayer,

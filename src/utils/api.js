@@ -2,7 +2,7 @@ import axios from 'axios';
 import { enqueueOperation, saveLocalData, getLocalData, getQueuedOperations, clearQueuedOperation } from './offlineSync';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
 });
 
 api.interceptors.request.use((config) => {
