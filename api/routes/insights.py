@@ -1,153 +1,106 @@
 import os
 import json
+import requests
 from datetime import datetime
 from flask import Blueprint, jsonify
 from utils.auth import require_auth
 from utils.financials import get_budget_summary
-from models import Transaction, DirectSharedExpense, Budget, User
-from google import genai
-from google.genai import types
-from pydantic import BaseModel, Field
 
 insights_bp = Blueprint('insights', __name__)
-
-class SavingSuggestion(BaseModel):
-    category: str
-    current_spending: float
-    suggested_reduction: float
-    suggestion: str
-
-class TopCategory(BaseModel):
-    name: str
-    amount: float
-    percentage: float
-
-class AIInsights(BaseModel):
-    summary: str
-    top_category: TopCategory
-    warnings: list[str]
-    saving_suggestions: list[SavingSuggestion]
-    recommendations: list[str]
 
 @insights_bp.route('/insights', methods=['POST'])
 @require_auth
 def generate_insights(user_id):
-    api_key = os.getenv('GEMINI_API_KEY')
-    if not api_key:
-        print("Missing GEMINI_API_KEY")
-        return jsonify({"success": False, "error": "Insights are temporarily unavailable."}), 503
-
+    api_key = os.getenv('GROQ_API_KEY')
     now = datetime.utcnow()
     
+    # 1. Calculate deterministic financial statistics
+    # This uses the single-source-of-truth from financials.py
+    # which correctly handles shared expenses and limits by current month.
     summary_data = get_budget_summary(user_id, now.month, now.year)
     
+    # 2. Prepare base response
+    response_data = {
+        "financials": summary_data,
+        "ai": None,
+        "ai_error": None
+    }
+    
+    # If no spending, we skip the AI call
     if summary_data['total_spent'] == 0:
-        return jsonify({"success": False, "error": "No spending data yet. Add a few expenses to unlock personalized AI insights."}), 400
+        return jsonify({"success": True, "data": response_data}), 200
 
+    if not api_key:
+        print("Missing GROQ_API_KEY")
+        response_data['ai_error'] = "Insights are temporarily unavailable (Missing API Key)."
+        return jsonify({"success": True, "data": response_data}), 200
+
+    # 3. Prompt Engineering
     prompt = f"""
-You are a personalized AI financial advisor inside the CampusSpend app.
-Analyze the following strictly factual financial summary of a student's spending for the current month.
-Return 3-5 personalized insights as structured JSON.
-Do not generate generic advice like "spend less". Focus on specific categories, real numbers from the data, and mathematically sound recommendations.
-The suggested saving amount must be reasonable and explicitly reference the user's spending data.
+You are the spending-insights assistant for CampusSpend.
+
+The financial statistics provided to you have already been calculated and verified by the application backend.
+DO NOT recalculate, modify, invent, or contradict any financial numbers.
+
+Analyze the provided monthly spending statistics and produce concise, practical insights.
+Identify:
+1. The highest spending category.
+2. Any category consuming an unusually large portion of spending.
+3. Whether the user is approaching or exceeding their budget.
+4. Practical ways to reduce unnecessary spending.
+5. One or two useful observations about the spending pattern.
+
+Do not invent transactions or amounts.
 
 FINANCIAL DATA:
 {json.dumps(summary_data, indent=2)}
+
+Return strictly valid JSON matching this schema:
+{{
+  "summary": "You spent ₹X this month, which is Y% of your budget.",
+  "insights": [
+    {{
+      "title": "Short title",
+      "description": "Insight description referencing real numbers.",
+      "type": "category"
+    }}
+  ],
+  "suggestions": [
+    "Suggestion 1",
+    "Suggestion 2"
+  ]
+}}
 """
 
+    # 4. Call Groq
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=AIInsights,
-                temperature=0.4
-            ),
-        )
-        # Parse the JSON explicitly
-        output_json = json.loads(response.text)
-        return jsonify({"success": True, "data": output_json}), 200
-        
-    except Exception as e:
-        print("Gemini API Error:", str(e))
-        return jsonify({"success": False, "error": "Insights are temporarily unavailable. Please try again later."}), 503
-
-@insights_bp.route('/charts', methods=['GET'])
-@require_auth
-def get_charts(user_id):
-    now = datetime.utcnow()
-    month = now.month
-    year = now.year
-    
-    # We will just fetch all transactions for this month
-    personal_tx = Transaction.query.filter(
-        Transaction.user_id == user_id,
-        extract('month', Transaction.date) == month,
-        extract('year', Transaction.date) == year
-    ).all()
-    
-    from models import DirectSharedExpenseParticipant, DirectSettlement, DirectSharedExpensePayer
-    participants = DirectSharedExpenseParticipant.query.filter(
-        DirectSharedExpenseParticipant.user_id == user_id,
-        DirectSharedExpenseParticipant.status == 'Accepted'
-    ).all()
-    
-    # Group by week (1 to 4)
-    weeks = [0, 0, 0, 0, 0] # indices 0-4 (week 1 to 5)
-    
-    for t in personal_tx:
-        day = t.date.day
-        week_idx = min((day - 1) // 7, 4)
-        weeks[week_idx] += t.amount
-        
-    for p in participants:
-        ex = p.shared_expense
-        if ex.date.month == month and ex.date.year == year:
-            day = ex.date.day
-            week_idx = min((day - 1) // 7, 4)
-            
-            has_completed_settlements = DirectSettlement.query.filter_by(expense_id=ex.id, status='COMPLETED').first() is not None
-            if ex.status == 'Completed' or has_completed_settlements:
-                # Add settlements paid
-                settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id, status='COMPLETED').all())
-                # Subtract settlements received
-                settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id, status='COMPLETED').all())
-                
-                # We ALSO need to add what they paid out of pocket, because insights tracks overall spending by week!
-                # If they paid 500, and settlement is 550, they spent 1050 this week.
-                payer_record = DirectSharedExpensePayer.query.filter_by(expense_id=ex.id, user_id=user_id).first()
-                paid = payer_record.amount_paid if payer_record else 0
-                
-                weeks[week_idx] += (paid + settlements_paid - settlements_received)
-            else:
-                weeks[week_idx] += p.amount_owed
-            
-    chart_data = [
-        {"name": "Week 1", "amount": round(weeks[0], 2)},
-        {"name": "Week 2", "amount": round(weeks[1], 2)},
-        {"name": "Week 3", "amount": round(weeks[2], 2)},
-        {"name": "Week 4", "amount": round(weeks[3] + weeks[4], 2)}
-    ]
-    
-    from utils.financials import get_budget_summary
-    from models import Transaction, DirectSharedExpense, Budget, User
-    summary = get_budget_summary(user_id, month, year)
-    
-    pie_data = []
-    for c in summary['categories']:
-        if c['spent'] > 0:
-            pie_data.append({"name": c['name'], "value": c['spent']})
-            
-    return jsonify({
-        "success": True, 
-        "data": {
-            "weekly": chart_data,
-            "categories": pie_data
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         }
-    }), 200
+        payload = {
+            "model": "llama3-70b-8192",
+            "messages": [
+                {"role": "system", "content": "You are a helpful JSON-only assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.4
+        }
+        
+        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=15)
+        if r.status_code == 200:
+            groq_resp = r.json()
+            content = groq_resp['choices'][0]['message']['content']
+            output_json = json.loads(content)
+            response_data['ai'] = output_json
+        else:
+            print("Groq API Error:", r.text)
+            response_data['ai_error'] = "Insights are temporarily unavailable."
+            
+    except Exception as e:
+        print("Groq Exception:", str(e))
+        response_data['ai_error'] = "Insights are temporarily unavailable. Please try again later."
 
-
-
-
+    # Return the unified data, even if AI failed, so frontend can display deterministic numbers
+    return jsonify({"success": True, "data": response_data}), 200
