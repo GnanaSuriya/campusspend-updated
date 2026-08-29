@@ -13,11 +13,6 @@ def get_effective_user_spending(user_id, month=None, year=None):
     
     personal_tx = query.all()
     
-    # Get all participant records for this user
-    participants = DirectSharedExpenseParticipant.query.filter(
-        DirectSharedExpenseParticipant.user_id == user_id
-    ).all()
-    
     cat_spent = {}
     total_spent = 0.0
     
@@ -25,46 +20,48 @@ def get_effective_user_spending(user_id, month=None, year=None):
         total_spent += t.amount
         cat_spent[t.category] = cat_spent.get(t.category, 0.0) + t.amount
         
-    for p in participants:
-        ex = p.shared_expense
-        # Filter by month/year if provided
+    # Get all expenses this user is involved in (as payer or participant)
+    participants = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id).all()
+    payers = DirectSharedExpensePayer.query.filter_by(user_id=user_id).all()
+    expenses = set([p.shared_expense for p in participants] + [p.shared_expense for p in payers])
+    
+    for ex in expenses:
         if month and year:
             if ex.date.month != month or ex.date.year != year:
                 continue
                 
-        # If Pending, do absolutely nothing (skip)
-        
+        cat = ex.category or 'Other'
         has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
 
-        if ex.status == 'Completed' or has_settlements:
-            # Budget is handled entirely by amount_paid + Settlement transactions
+        if ex.status == 'Completed' or has_settlements or ex.status == 'Pending':
+            # MODERN EXPENSES: Always include amount_paid (even when Pending)
             payer_record = DirectSharedExpensePayer.query.filter_by(expense_id=ex.id, user_id=user_id).first()
             if payer_record:
-                amount = payer_record.amount_paid
+                total_spent += payer_record.amount_paid
+                cat_spent[cat] = cat_spent.get(cat, 0.0) + payer_record.amount_paid
+                
+            # If Completed, apply the DirectSettlement transfers exactly once
+            if ex.status == 'Completed' or has_settlements:
+                # Add settlements paid (user is debtor, so they spend MORE money)
+                settlements_paid = DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all()
+                for s in settlements_paid:
+                    total_spent += s.amount
+                    cat_spent[cat] = cat_spent.get(cat, 0.0) + s.amount
+                    
+                # Subtract settlements received (user is creditor, so they recover/spend LESS money)
+                settlements_received = DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all()
+                for s in settlements_received:
+                    total_spent -= s.amount
+                    cat_spent[cat] = cat_spent.get(cat, 0.0) - s.amount
+                    
+        elif ex.status == 'Accepted' or ex.status == 'Change_Pending':
+            # LEGACY EXPENSES: Accepted but no settlements generated.
+            # Preserve the old behavior completely (use amount_owed).
+            part_record = DirectSharedExpenseParticipant.query.filter_by(expense_id=ex.id, user_id=user_id).first()
+            if part_record and (ex.status in ['Accepted', 'Change_Pending'] or part_record.status == 'Accepted'):
+                amount = part_record.amount_owed
                 total_spent += amount
-                cat = ex.category or 'Other'
                 cat_spent[cat] = cat_spent.get(cat, 0.0) + amount
-                
-            # Add settlements paid (user is debtor)
-            settlements_paid = DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all()
-            for s in settlements_paid:
-                total_spent += s.amount
-                cat = ex.category or 'Other'
-                cat_spent[cat] = cat_spent.get(cat, 0.0) + s.amount
-                
-            # Subtract settlements received (user is creditor)
-            settlements_received = DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all()
-            for s in settlements_received:
-                total_spent -= s.amount
-                cat = ex.category or 'Other'
-                cat_spent[cat] = cat_spent.get(cat, 0.0) - s.amount
-                
-        elif ex.status == 'Accepted' or p.status == 'Accepted':
-            # Old logic for legacy Accepted expenses that have no settlement transactions
-            amount = p.amount_owed
-            total_spent += amount
-            cat = ex.category or 'Other'
-            cat_spent[cat] = cat_spent.get(cat, 0.0) + amount
 
     return total_spent, cat_spent
 
