@@ -78,7 +78,22 @@ def get_dashboard(user_id):
         ex = p.shared_expense
         d = ex.to_dict()
         d['is_shared'] = True
-        d['amount'] = p.amount_owed
+        
+        has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
+        if ex.status == 'Completed' or has_settlements:
+            settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all())
+            settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all())
+            
+            # The net settlement amount for this user
+            if settlements_paid > 0:
+                d['amount'] = settlements_paid
+            elif settlements_received > 0:
+                d['amount'] = -settlements_received # Negative means they received money
+            else:
+                d['amount'] = 0
+        else:
+            d['amount'] = p.amount_owed
+            
         all_recent.append(d)
         
     all_recent.sort(key=lambda x: parser.parse(x['date']), reverse=True)

@@ -107,7 +107,22 @@ def get_charts(user_id):
         if ex.date.month == month and ex.date.year == year:
             day = ex.date.day
             week_idx = min((day - 1) // 7, 4)
-            weeks[week_idx] += p.amount_owed
+            
+            has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
+            if ex.status == 'Completed' or has_settlements:
+                # Add settlements paid
+                settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all())
+                # Subtract settlements received
+                settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all())
+                
+                # We ALSO need to add what they paid out of pocket, because insights tracks overall spending by week!
+                # If they paid 500, and settlement is 550, they spent 1050 this week.
+                payer_record = DirectSharedExpensePayer.query.filter_by(expense_id=ex.id, user_id=user_id).first()
+                paid = payer_record.amount_paid if payer_record else 0
+                
+                weeks[week_idx] += (paid + settlements_paid - settlements_received)
+            else:
+                weeks[week_idx] += p.amount_owed
             
     chart_data = [
         {"name": "Week 1", "amount": round(weeks[0], 2)},
