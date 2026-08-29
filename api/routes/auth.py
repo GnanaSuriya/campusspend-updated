@@ -94,51 +94,77 @@ def update_me(user_id):
 @auth_bp.route('/reset', methods=['DELETE'])
 @require_auth
 def reset_data(user_id):
-    from models import Transaction, Budget, DirectSharedExpense, Alert, DirectSharedExpenseParticipant, DirectSharedExpensePayer
+    from models import (
+        Transaction, Budget, DirectSharedExpense, Alert, 
+        DirectSharedExpenseParticipant, DirectSharedExpensePayer,
+        DirectSharedExpenseActivity, Group, GroupMember,
+        SharedExpense, ExpenseSplit, Settlement
+    )
     
-    # 1. Delete all transactions
-    Transaction.query.filter_by(user_id=user_id).delete()
-    
-    # 2. Delete all budgets
-    Budget.query.filter_by(user_id=user_id).delete()
-    
-    # 3. Delete all alerts
-    Alert.query.filter_by(user_id=user_id).delete()
-    
-    # 4. Handle shared expenses
-    # Expenses created by this user
-    created_expenses = DirectSharedExpense.query.filter_by(creator_id=user_id).all()
-    for e in created_expenses:
-        db.session.delete(e) # This triggers ORM cascade for participants, payers, activities
+    try:
+        # 1. Delete basic financial data
+        Transaction.query.filter_by(user_id=user_id).delete()
+        Budget.query.filter_by(user_id=user_id).delete()
+        Alert.query.filter_by(user_id=user_id).delete()
         
-    created_ids = [e.id for e in created_expenses]
-    
-    # Remove user as participant from other people's expenses
-    if created_ids:
-        my_participations = DirectSharedExpenseParticipant.query.filter(
-            DirectSharedExpenseParticipant.user_id == user_id,
-            DirectSharedExpenseParticipant.expense_id.notin_(created_ids)
-        ).all()
-    else:
-        my_participations = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id).all()
+        # 2. Handle Legacy Group and Shared Expenses
+        groups = Group.query.filter_by(created_by=user_id).all()
+        for g in groups:
+            # Manually delete dependent records without cascade
+            Settlement.query.filter_by(group_id=g.id).delete()
+            # SharedExpense splits are cascaded, but SharedExpense itself needs to be deleted
+            expenses_in_group = SharedExpense.query.filter_by(group_id=g.id).all()
+            for exp in expenses_in_group:
+                db.session.delete(exp)
+            db.session.delete(g) # cascades to GroupMember
+            
+        GroupMember.query.filter_by(user_id=user_id).delete()
         
-    for p in my_participations:
-        db.session.delete(p)
+        # Remove user from older settlements in other groups
+        from sqlalchemy import or_
+        Settlement.query.filter(or_(Settlement.payer_id == user_id, Settlement.payee_id == user_id)).delete()
+        ExpenseSplit.query.filter_by(user_id=user_id).delete()
         
-    # Remove user as payer from other people's expenses
-    if created_ids:
-        my_payments = DirectSharedExpensePayer.query.filter(
-            DirectSharedExpensePayer.user_id == user_id,
-            DirectSharedExpensePayer.expense_id.notin_(created_ids)
-        ).all()
-    else:
-        my_payments = DirectSharedExpensePayer.query.filter_by(user_id=user_id).all()
+        # 3. Handle Direct Shared Expenses
+        created_expenses = DirectSharedExpense.query.filter_by(creator_id=user_id).all()
+        for e in created_expenses:
+            db.session.delete(e) # This triggers ORM cascade for participants, payers, activities
+            
+        created_ids = [e.id for e in created_expenses]
         
-    for p in my_payments:
-        db.session.delete(p)
-    
-    db.session.commit()
-    return jsonify({"success": True, "data": None}), 200
+        # Remove user as participant from other people's expenses
+        if created_ids:
+            my_participations = DirectSharedExpenseParticipant.query.filter(
+                DirectSharedExpenseParticipant.user_id == user_id,
+                DirectSharedExpenseParticipant.expense_id.notin_(created_ids)
+            ).all()
+            my_payments = DirectSharedExpensePayer.query.filter(
+                DirectSharedExpensePayer.user_id == user_id,
+                DirectSharedExpensePayer.expense_id.notin_(created_ids)
+            ).all()
+            my_activities = DirectSharedExpenseActivity.query.filter(
+                DirectSharedExpenseActivity.user_id == user_id,
+                DirectSharedExpenseActivity.expense_id.notin_(created_ids)
+            ).all()
+        else:
+            my_participations = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id).all()
+            my_payments = DirectSharedExpensePayer.query.filter_by(user_id=user_id).all()
+            my_activities = DirectSharedExpenseActivity.query.filter_by(user_id=user_id).all()
+            
+        for p in my_participations:
+            db.session.delete(p)
+        for p in my_payments:
+            db.session.delete(p)
+        for a in my_activities:
+            db.session.delete(a)
+        
+        db.session.commit()
+        return jsonify({"success": True, "data": None}), 200
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"Error during reset for user {user_id}:\n{traceback.format_exc()}")
+        return jsonify({"success": False, "error": f"Failed to reset data: {str(e)}"}), 500
 
 @auth_bp.route('/search', methods=['GET'])
 @require_auth
