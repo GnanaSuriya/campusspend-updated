@@ -84,16 +84,66 @@ Return strictly valid JSON matching this schema:
 
     # 5. Call Gemini
     try:
-        # Debugging the API key format without leaking it
-        print("GEMINI_API_KEY configured:", bool(api_key))
-        print("GEMINI_API_KEY prefix:", api_key[:3] if api_key else "NONE")
+        raw_key = os.getenv("GEMINI_API_KEY")
+        google_api_key = os.getenv("GOOGLE_API_KEY")
         
-        # Strip any accidental quotes or whitespace from the environment variable
-        clean_key = api_key.strip().strip('"\'')
+        # Debugging logging
+        print("GEMINI_API_KEY configured:", bool(raw_key))
+        print("GOOGLE_API_KEY configured:", bool(google_api_key))
+        if raw_key:
+            print("GEMINI_API_KEY prefix:", raw_key[:3])
+            print("GEMINI_API_KEY length:", len(raw_key))
+        else:
+            print("GEMINI_API_KEY prefix: NONE")
+            print("GEMINI_API_KEY length: 0")
+            
+        # Strip accidental whitespace/quotes safely
+        api_key = raw_key
+        if api_key:
+            api_key = api_key.strip()
+            if len(api_key) >= 2 and api_key[0] == '"' and api_key[-1] == '"':
+                api_key = api_key[1:-1]
+            elif len(api_key) >= 2 and api_key[0] == "'" and api_key[-1] == "'":
+                api_key = api_key[1:-1]
+                
+        client = genai.Client(api_key=api_key)
         
-        # Use exact working pattern
-        client = genai.Client(api_key=clean_key)
+        # A. Minimal SDK Test
+        try:
+            minimal_sdk_response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents="Reply with exactly OK"
+            )
+            print("Minimal SDK test succeeded.")
+        except Exception as e:
+            error_str = str(e).replace(api_key, "[REDACTED]") if api_key else str(e)
+            print("Minimal SDK test failed:", type(e).__name__, "-", error_str)
+            
+            # B. Direct REST Test if SDK failed
+            import requests
+            print("Attempting direct REST test...")
+            rest_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key
+            }
+            payload = {
+                "contents": [{"parts": [{"text": "Reply with exactly OK"}]}]
+            }
+            rest_resp = requests.post(rest_url, headers=headers, json=payload)
+            print("REST test status:", rest_resp.status_code)
+            rest_error = rest_resp.text.replace(api_key, "[REDACTED]") if api_key else rest_resp.text
+            print("REST test response:", rest_error)
+            
+            if rest_resp.status_code == 200:
+                response_data['ai_error'] = f"Diagnostic: REST succeeded but SDK failed. SDK Error: {error_str}"
+            else:
+                response_data['ai_error'] = f"Diagnostic: Both SDK and REST failed. REST Status: {rest_resp.status_code}. REST Error: {rest_error}"
+            
+            # Since authentication failed, abort main request
+            return jsonify({"success": True, "data": response_data}), 200
         
+        # Main CampusSpend Insights Request
         response = client.models.generate_content(
             model='gemini-3-flash-preview',
             contents=prompt,
