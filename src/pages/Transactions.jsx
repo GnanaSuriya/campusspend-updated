@@ -94,12 +94,15 @@ export default function Transactions() {
                   <td className="p-4 text-slate-600">{tx.payment_method || '-'}</td>
                   <td className="p-4 font-bold text-slate-800 text-right">₹{tx.amount.toFixed(2)}</td>
                   <td className="p-4 text-center">
-                    <button 
-                      onClick={() => handleDelete(tx.id)}
-                      className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    {!tx.is_shared && (
+                      <button 
+                        onClick={() => handleDelete(tx.id)}
+                        className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-500/10 transition-colors"
+                        title="Delete Transaction"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -11,8 +11,41 @@ transactions_bp = Blueprint('transactions', __name__)
 @transactions_bp.route('', methods=['GET'])
 @require_auth
 def get_transactions(user_id):
-    txs = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.desc()).all()
-    return jsonify({"success": True, "data": [t.to_dict() for t in txs]}), 200
+    from models import DirectSharedExpenseParticipant
+    from dateutil import parser
+    
+    # 1. Normal personal transactions
+    txs = Transaction.query.filter_by(user_id=user_id).all()
+    all_txs = [t.to_dict() for t in txs]
+    for t in all_txs:
+        t['type'] = 'personal'
+        t['is_shared'] = False
+        
+    # 2. Completed/Accepted shared expenses
+    parts = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id, status='Accepted').all()
+    for p in parts:
+        ex = p.shared_expense
+        d = ex.to_dict()
+        
+        # Format similar to normal transaction, but identifying as shared
+        tx_obj = {
+            'id': f"shared_{ex.id}_{p.id}",  # Make ID unique so React key doesn't clash with normal tx ID
+            'expense_id': ex.id,
+            'description': f"[Shared] {ex.description}" if ex.description else '[Shared] Expense',
+            'amount': p.amount_owed,       # MUST be amount_owed as requested
+            'category': ex.category,
+            'date': d['date'],
+            'type': 'shared_expense',
+            'is_shared': True,
+            'status': ex.status,
+            'payment_method': 'Shared'
+        }
+        all_txs.append(tx_obj)
+        
+    # Sort all transactions by date descending
+    all_txs.sort(key=lambda x: parser.parse(x['date']), reverse=True)
+    
+    return jsonify({"success": True, "data": all_txs}), 200
 
 @transactions_bp.route('', methods=['POST'])
 @require_auth
