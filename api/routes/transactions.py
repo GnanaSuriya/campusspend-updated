@@ -22,9 +22,14 @@ def get_transactions(user_id):
         t['is_shared'] = False
         
     # 2. Completed/Accepted shared expenses
+    from models import DirectSettlement
     parts = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id, status='Accepted').all()
     for p in parts:
         ex = p.shared_expense
+        has_completed_settlements = DirectSettlement.query.filter_by(expense_id=ex.id, status='COMPLETED').first() is not None
+        if not (ex.status == 'Completed' or has_completed_settlements or ex.status == 'Accepted'):
+            continue
+            
         d = ex.to_dict()
         
         # Format similar to normal transaction, but identifying as shared
@@ -106,13 +111,16 @@ def get_dashboard(user_id):
         d['is_shared'] = False
         all_recent.append(d)
         
-    parts = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id, status='Accepted').limit(10).all()
+    parts = DirectSharedExpenseParticipant.query.filter_by(user_id=user_id, status='Accepted').all()
     for p in parts:
         ex = p.shared_expense
+        has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
+        if not (ex.status == 'Completed' or has_settlements or ex.status == 'Accepted'):
+            continue
+            
         d = ex.to_dict()
         d['is_shared'] = True
         
-        has_settlements = DirectSettlement.query.filter_by(expense_id=ex.id).first() is not None
         if ex.status == 'Completed' or has_settlements:
             settlements_paid = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, debtor_id=user_id).all())
             settlements_received = sum(s.amount for s in DirectSettlement.query.filter_by(expense_id=ex.id, creditor_id=user_id).all())
