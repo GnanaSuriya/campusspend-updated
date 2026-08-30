@@ -109,6 +109,25 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
           </div>
         </div>
 
+        {/* Decline Reasons Banner */}
+        {expense.participants?.some(p => p.status === 'Declined') && (
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl space-y-3">
+            {expense.participants.filter(p => p.status === 'Declined').map(p => (
+              <div key={p.user_id} className="flex items-start gap-3">
+                <XCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                    {p.user_id === currentUserId ? 'You declined this expense.' : `${p.user_name} declined this expense.`}
+                  </p>
+                  {p.decline_reason && (
+                    <p className="text-sm text-red-700 dark:text-red-300 mt-1">Reason: "{p.decline_reason}"</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Change Request Banner */}
         {expense.status === 'Change_Pending' && (
           <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl">
@@ -130,7 +149,7 @@ export default function SharedExpenseCard({ expense, currentUserId, onEdit, onDe
         )}
 
         {/* Accept/Decline Buttons for Participants */}
-        {myPart && myPart.status === 'Pending' && expense.status !== 'Change_Pending' && (
+        {myPart && myPart.status === 'Pending' && expense.status !== 'Change_Pending' && expense.status !== 'Declined' && (
           <div className="mt-4 flex gap-3">
             <button onClick={() => onAccept(expense.id)} className="flex-1 py-3 bg-mint-500 hover:bg-mint-600 text-white text-sm font-bold rounded-xl transition flex items-center justify-center gap-2">
               <CheckCircle2 size={18} /> Accept Share

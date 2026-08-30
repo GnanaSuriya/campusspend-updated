@@ -251,12 +251,16 @@ def update_shared_expense(user_id, exp_id):
                 participant.status = 'Accepted'
             
             all_accepted = True
+            any_declined = False
             for p in expense.participants:
+                if p.status == 'Declined':
+                    any_declined = True
                 if p.status != 'Accepted':
                     all_accepted = False
-                    break
             
-            if all_accepted:
+            if any_declined:
+                expense.status = 'Declined'
+            elif all_accepted:
                 expense.status = 'Completed'
                 generate_settlements_for_expense(expense)
             else:
